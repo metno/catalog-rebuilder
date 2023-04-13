@@ -136,10 +136,9 @@ def main():
 
 if __name__ == "__main__":
     enabled = os.getenv('CATALOG_REBUILDER_ENABLED')
-    logger.info("Enabled? %s" %enabled)
-    if enabled is True:
-        # main()
+    if enabled == 'True' or enabled == 'true':
         logger.info("Catalog rebuilder enabled. -starting job- ")
+        main()
     else:
         logger.info("Catalog rebuilder disabled. -skipping job- ")
     sys.exit(0)
