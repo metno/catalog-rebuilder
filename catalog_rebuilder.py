@@ -21,6 +21,7 @@ from concurrent import futures as Futures
 import itertools
 import requests
 import os
+import sys
 from pathlib import Path
 import logging
 
@@ -81,7 +82,7 @@ def getListOfFiles(dirName):
     return listOfFiles
 
 
-def load_file(filename):
+def loadFile(filename):
     """
     Load mmd xml file and return file
     """
@@ -117,13 +118,28 @@ def dmci_ingest(dmci_url, mmd):
 # - when job is finished the number of records in archive and csw-catalog should match
 # - In kubernetes this should either be a pod that stops when finished, or using kind: Job annotation.
 
-archive_path = os.environ.get('ARCHIVE_PATH') # Defined in deployment.yaml
-dmci_url = os.environ.get('DMCI_URL') # Defined in deployment.yaml
-fileList = getListOfFiles(archive_path)
+def main():
+    """
+    Main function. Get a list of all mmd files in archive and ingest them into custom
+    dmci with only csw distributor (solr to be added when ready).
+    """
+    archive_path = "/archive" # Default from container deplouyment
+    dmci_url = "http://dmci-catalog-rebuilder:8000" # dmci endpoint is local
+    fileList = getListOfFiles(archive_path)
 
-for(file, mmd) in concurrently(fn=load_file, inputs=fileList):
+    for(file, mmd) in concurrently(fn=loadFile, inputs=fileList):
 
-            # Get the processed document and its status
-            status, msg = dmci_ingest(dmci_url,mmd)
-            if status != 200:
-                 logger.error("Could not ingest mmd file %s. Reason: %s" %(file,msg))
+        # Get the processed document and its status
+        status, msg = dmci_ingest(dmci_url,mmd)
+        if status != 200:
+            logger.error("Could not ingest mmd file %s. Reason: %s" %(file,msg))
+
+if __name__ == "__main__":
+    enabled = os.getenv('CATALOG_REBUILDER_ENABLED')
+    logger.info("Enabled? %s" %enabled)
+    if enabled is True:
+        # main()
+        logger.info("Catalog rebuilder enabled. -starting job- ")
+    else:
+        logger.info("Catalog rebuilder disabled. -skipping job- ")
+    sys.exit(0)
