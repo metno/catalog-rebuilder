@@ -78,6 +78,8 @@ def getListOfFiles(dirName):
     for (dirpath, dirnames, filenames) in os.walk(dirName):
         listOfFiles += [os.path.join(dirpath, file) for file in filenames]
 
+    if len(listOfFiles) == 0:
+        return None
 
     return listOfFiles
 
@@ -100,6 +102,16 @@ def loadFile(filename):
             return None
         return xmlfile
 
+def check_integrety(num_files,pycsw_url,solr_url):
+    """
+    Function to check that both pycsw and solr have the
+    equal amount of records as the input files read from
+    the mmd repository archive.
+
+    A sys.exit(1) with an error should be sendt if not match
+    A sys.exit(1) with an success log message if match
+    """
+    raise NotImplementedError
 
 def dmci_ingest(dmci_url, mmd):
     """
@@ -109,8 +121,6 @@ def dmci_ingest(dmci_url, mmd):
     url = dmci_url + '/v1/insert'
     response = requests.post(url, data=mmd)
     return response.status_code, response.text
-
-
 
 ############## PSEUDO CODE ##########################
 # - read/create list of all xml files in the archive
@@ -123,16 +133,30 @@ def main():
     Main function. Get a list of all mmd files in archive and ingest them into custom
     dmci with only csw distributor (solr to be added when ready).
     """
-    archive_path = "/archive" # Default from container deplouyment
-    dmci_url = "http://dmci-catalog-rebuilder:8000" # dmci endpoint is local
+    archive_path = "/archive" # Default from container deployment
+    dmci_url = "http://dmci-catalog-rebuilder:8000" # dmci endpoint is local for pod only
     fileList = getListOfFiles(archive_path)
+    if fileList is None:
+        logger.error("No MMD files found in archive_path: %s" %archive_path)
+        sys.exit(1)
 
+    logger.info("Files to process: %s " %len(fileList))
     for(file, mmd) in concurrently(fn=loadFile, inputs=fileList):
 
         # Get the processed document and its status
+        logger.debug("Processing file: %s" %file)
         status, msg = dmci_ingest(dmci_url,mmd)
         if status != 200:
             logger.error("Could not ingest mmd file %s. Reason: %s" %(file,msg))
+
+
+    """
+    TODO: Add check here after ingestion is finished to check if we have the same number of records as input files.
+    """
+    # num_files = len(fileList)
+    # pycsw_url = os.getenv('PYCSW_URL')
+    # solr_url = os.getenv('SOLR_URL')
+    # check_integrety(num_files,pycsw_url,solr_url)
 
 if __name__ == "__main__":
     enabled = os.getenv('CATALOG_REBUILDER_ENABLED')
