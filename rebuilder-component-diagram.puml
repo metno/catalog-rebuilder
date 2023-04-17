@@ -1,0 +1,23 @@
+@startuml rebuilder-component-diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+ContainerDb(file, "Metadata store", "file system", "Backup Dataset Discovery Metadata Store. Committed to git on regular intervals.")
+Container(csw_agent, "CSW distributor", "Python DMCI", "Using the MMS client, subscribes and listens for events of MMD create/update/delete. Can be removed when SOLR becomes the db backend for pycsw.")
+Container(solr_ingest, "SOLR distributor", "Python DMCI", "SOLR ingestor for MMD metadata.")
+
+Container_Boundary(rebuilder, "Catalog rebuilder"){
+
+  Component(rebuild_job, "Rebuild job", "Python", "Pushes MMD files to the SOLR and CSW distributors.")
+  Component(validator, "Validator", "Python", "Checks that the number of entries in each data store is the same.")
+  Component(manual_job, "Manual job", "Human", "If the validator fails, a human operator checks rejected jobs in dmci and follows up as needed.")
+}
+
+Rel(rebuild_job, file, "gets MMD files from")
+Rel(rebuild_job, csw_agent, "pushes MMD files to")
+Rel(rebuild_job, solr_ingest, "pushes MMD files to")
+
+Rel(validator, file, "counts entries in")
+Rel(validator, csw_agent, "counts entries in")
+Rel(validator, solr_ingest, "counts entries in")
+
+@enduml
