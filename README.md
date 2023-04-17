@@ -2,7 +2,7 @@
 
 Catalog rebuilder of CSW and Solr for the S-ENDA project
 
-![Catalog rebuilder component diagram](rebuilder-component-diagram.png, Catalog rebuilder component diagram)
+![Catalog rebuilder component diagram](rebuilder-component-diagram.png)
 
 ## License
 
