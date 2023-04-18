@@ -10,7 +10,7 @@ The package reads the following environment variables.
 
 * `CATALOG_REBUILDER_ENABLED` If `true` or `True` the catalog will be rebuilt. If not set or other values, rebuilding will not execute.
 * `MMD_ARCHIVE_PATH` the local path to look for the **mmd-archive**.
-* `DMCI_REBULDER_URL` the url for the custom rebuilder instance of DMCI.
+* `DMCI_REBUILDER_URL` the url for the custom rebuilder instance of DMCI.
 * `PYCSW_URL` the url for CSW.
 * `SOLR_URL` the url for Solr. (**Not needed at this moment**)
 * `DEBUG` set this to other than blank to enable debugging
