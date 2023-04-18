@@ -21,23 +21,24 @@ from concurrent import futures as Futures
 import itertools
 import requests
 import os
+import fnmatch
 import sys
 from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 formatter = logging.Formatter('%(name)s:%(asctime)s:%(levelname)s:%(message)s')
 
 stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.DEBUG)
+stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
 
 # Function for concerrntly process list of inputs using multithreading
-def concurrently(fn, inputs, *, max_concurrency=5):
+def concurrently(fn, inputs, *, max_concurrency=10):
     """
     Calls the function ``fn`` on the values ``inputs``.
     ``fn`` should be a function that takes a single input, which is the
@@ -76,11 +77,11 @@ def getListOfFiles(dirName):
     """
     listOfFiles = list()
     for (dirpath, dirnames, filenames) in os.walk(dirName):
-        listOfFiles += [os.path.join(dirpath, file) for file in filenames]
+        for filename in fnmatch.filter(filenames, '*.xml'):
+            listOfFiles.append(os.path.join(dirpath, filename))
 
     if len(listOfFiles) == 0:
         return None
-
     return listOfFiles
 
 
@@ -94,13 +95,13 @@ def loadFile(filename):
     except Exception as e:
         logger.warning('Not a valid filepath %s error was %s' %(filename,e))
         return None
-    with open(file, encoding='utf-8') as fd:
+    with open(file, encoding='UTF-8') as fd:
         try:
             xmlfile = fd.read()
         except Exception as e:
             logger.error('Clould not read file %s error was %s' %(filename,e))
             return None
-        return xmlfile
+        return xmlfile.encode()
 
 def check_integrety(num_files,pycsw_url,solr_url):
     """
@@ -119,7 +120,14 @@ def dmci_ingest(dmci_url, mmd):
     insert the given file.
     """
     url = dmci_url + '/v1/insert'
-    response = requests.post(url, data=mmd)
+    try:
+        response = requests.post(url, data=mmd)
+    except ConnectionError as e:
+        logger.error("Could not connect to DMCI rebuilder endpoint %s. Reason: %s" % (url, e))
+        sys.exit(1)
+    except Exception as e:
+        logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s" % (url, e))
+        sys.exit(1)
     return response.status_code, response.text
 
 ############## PSEUDO CODE ##########################
@@ -134,7 +142,14 @@ def main():
     dmci with only csw distributor (solr to be added when ready).
     """
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
-    dmci_url = os.getenv('DMCI_REBULDER_URL')
+    if not os.path.exists(archive_path):
+        logger.error("Colud not read from archive path %s" % archive_path)
+        sys.exit(1)
+    logger.debug("Reading from archive path %s" % archive_path)
+
+    dmci_url = os.getenv('DMCI_REBUILDER_URL')
+    logger.debug("DMCI rebuilder url is %s" % dmci_url)
+
     fileList = getListOfFiles(archive_path)
     if fileList is None:
         logger.error("No MMD files found in archive_path: %s" %archive_path)
@@ -157,12 +172,24 @@ def main():
     # pycsw_url = os.getenv('PYCSW_URL')
     # solr_url = os.getenv('SOLR_URL')
     # check_integrety(num_files,pycsw_url,solr_url)
-
+    sys.exit(0)
 if __name__ == "__main__":
     enabled = os.getenv('CATALOG_REBUILDER_ENABLED')
+    archive_path = os.getenv('MMD_ARCHIVE_PATH')
+    dmci_url = os.getenv('DMCI_REBUILDER_URL')
+
+    if os.getenv('DEBUG') is not None:
+        logger.setLevel(logging.DEBUG)
+        stream_handler.setLevel(logging.DEBUG)
+    if archive_path is None:
+        logger.error("Missing environment variable MMD_ARCHIVE_PATH")
+        sys.exit(1)
+    if dmci_url is None:
+        logger.error("Missing environment variable DMCI_REBUILDER_URL")
+        sys.exit(1)
     if enabled == 'True' or enabled == 'true':
-        logger.info("Catalog rebuilder enabled. -starting job- ")
+        logger.info("Catalog rebuilder enabled. --starting job-- ")
         main()
     else:
-        logger.info("Catalog rebuilder disabled. -skipping job- ")
+        logger.info("Catalog rebuilder disabled. --skipping job-- ")
     sys.exit(0)
