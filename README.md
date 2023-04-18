@@ -13,6 +13,7 @@ The package reads the following environment variables.
 * `DMCI_REBULDER_URL` the url for the custom rebuilder instance of DMCI.
 * `PYCSW_URL` the url for CSW.
 * `SOLR_URL` the url for Solr. (**Not needed at this moment**)
+* `DEBUG` set this to other than blank to enable debugging
 
 
 
