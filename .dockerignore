@@ -1,0 +1,9 @@
+Dockerfile
+.dockerignore
+.git
+.github
+.gitignore
+.gitlab-ci.yml
+*~
+*.png
+*.puml
