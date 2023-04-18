@@ -133,8 +133,8 @@ def main():
     Main function. Get a list of all mmd files in archive and ingest them into custom
     dmci with only csw distributor (solr to be added when ready).
     """
-    archive_path = "/archive" # Default from container deployment
-    dmci_url = "http://dmci-catalog-rebuilder:8000" # dmci endpoint is local for pod only
+    archive_path = os.getenv('MMD_ARCHIVE_PATH')
+    dmci_url = os.getenv('DMCI_REBULDER_URL')
     fileList = getListOfFiles(archive_path)
     if fileList is None:
         logger.error("No MMD files found in archive_path: %s" %archive_path)
