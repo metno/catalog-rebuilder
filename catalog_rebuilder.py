@@ -143,7 +143,7 @@ def main():
     """
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
     if not os.path.exists(archive_path):
-        logger.error("Colud not read from archive path %s" % archive_path)
+        logger.error("Could not read from archive path %s" % archive_path)
         sys.exit(1)
     logger.debug("Reading from archive path %s" % archive_path)
 
