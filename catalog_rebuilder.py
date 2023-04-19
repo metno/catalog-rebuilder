@@ -103,14 +103,16 @@ def loadFile(filename):
             return None
         return xmlfile.encode()
 
-def check_integrety(num_files,pycsw_url,solr_url):
+def check_integrety(num_files,dmci_status_endpoint):
     """
     Function to check that both pycsw and solr have the
     equal amount of records as the input files read from
     the mmd repository archive.
 
+    Will use the dmci status endpoint for testing this.
+
     A sys.exit(1) with an error should be sendt if not match
-    A sys.exit(1) with an success log message if match
+    A sys.exit(0) with an success log message if match
     """
     raise NotImplementedError
 
@@ -130,11 +132,6 @@ def dmci_ingest(dmci_url, mmd):
         sys.exit(1)
     return response.status_code, response.text
 
-############## PSEUDO CODE ##########################
-# - read/create list of all xml files in the archive
-# - for each file, send to dmci/insert only using the pycsw distributor
-# - when job is finished the number of records in archive and csw-catalog should match
-# - In kubernetes this should either be a pod that stops when finished, or using kind: Job annotation.
 
 def main():
     """
