@@ -24,6 +24,7 @@ import os
 import fnmatch
 import sys
 from pathlib import Path
+from time import sleep
 import logging
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,9 @@ def main():
     Main function. Get a list of all mmd files in archive and ingest them into custom
     dmci with only csw distributor (solr to be added when ready).
     """
+    # Wait a bit to be sure the dmci-catalog-rebuilder is up and running
+    sleep(60)
+
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
     if not os.path.exists(archive_path):
         logger.error("Could not read from archive path %s" % archive_path)
