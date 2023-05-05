@@ -193,4 +193,5 @@ if __name__ == "__main__":
         main()
     else:
         logger.info("Catalog rebuilder disabled. --skipping job-- ")
+        sleep(60)
     sys.exit(0)
