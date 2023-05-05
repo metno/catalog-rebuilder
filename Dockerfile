@@ -17,7 +17,7 @@ ENV CATALOG_REBUILDER_ENABLED=False
 
 RUN pip install -r requirements.txt
 
-ENTRYPOINT [ "python3" ]
+ENTRYPOINT [ "/bin/bash" ]
 
 # Start application
-CMD [ "catalog_rebuilder.py" ]
+CMD [ "entrypoint.sh" ]
