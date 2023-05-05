@@ -1,3 +1,3 @@
 #!/bin/bash
-python catalog_rebuilder.py
+/usr/bin/python3 catalog_rebuilder.py
 pkill -QUIT gunicorn
