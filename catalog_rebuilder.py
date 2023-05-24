@@ -23,6 +23,7 @@ import requests
 import os
 import fnmatch
 import sys
+import time
 from pathlib import Path
 from time import sleep
 import logging
@@ -71,6 +72,7 @@ def concurrently(fn, inputs, *, max_concurrency=10):
                 fut = executor.submit(fn, input)
                 futures[fut] = input
 
+
 def getListOfFiles(dirName):
     """
     create a list of file and sub directories
@@ -94,17 +96,18 @@ def loadFile(filename):
     try:
         file = Path(filename)
     except Exception as e:
-        logger.warning('Not a valid filepath %s error was %s' %(filename,e))
+        logger.warning('Not a valid filepath %s error was %s' % (filename, e))
         return None
     with open(file, encoding='UTF-8') as fd:
         try:
             xmlfile = fd.read()
         except Exception as e:
-            logger.error('Clould not read file %s error was %s' %(filename,e))
+            logger.error('Clould not read file %s error was %s' % (filename, e))
             return None
         return xmlfile.encode()
 
-def check_integrety(num_files,dmci_status_endpoint):
+
+def check_integrety(num_files, dmci_status_endpoint):
     """
     Function to check that both pycsw and solr have the
     equal amount of records as the input files read from
@@ -116,6 +119,7 @@ def check_integrety(num_files,dmci_status_endpoint):
     A sys.exit(0) with an success log message if match
     """
     raise NotImplementedError
+
 
 def dmci_ingest(dmci_url, mmd):
     """
@@ -129,7 +133,8 @@ def dmci_ingest(dmci_url, mmd):
         logger.error("Could not connect to DMCI rebuilder endpoint %s. Reason: %s" % (url, e))
         sys.exit(1)
     except Exception as e:
-        logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s" % (url, e))
+        logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s",
+                     (url, e))
         sys.exit(1)
     return response.status_code, response.text
 
@@ -151,29 +156,44 @@ def main():
     dmci_url = os.getenv('DMCI_REBUILDER_URL')
     logger.debug("DMCI rebuilder url is %s" % dmci_url)
 
+    # Keep track of time taken for job.
+    st = time.perf_counter()
+    pst = time.process_time()
+
     fileList = getListOfFiles(archive_path)
     if fileList is None:
-        logger.error("No MMD files found in archive_path: %s" %archive_path)
+        logger.error("No MMD files found in archive_path: %s", archive_path)
         sys.exit(1)
 
-    logger.info("Files to process: %s " %len(fileList))
-    for(file, mmd) in concurrently(fn=loadFile, inputs=fileList):
+    logger.info("Files to process: %s ", len(fileList))
+    for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
 
         # Get the processed document and its status
-        logger.debug("Processing file: %s" %file)
-        status, msg = dmci_ingest(dmci_url,mmd)
+        logger.debug("Processing file: %s", file)
+        status, msg = dmci_ingest(dmci_url, mmd)
         if status != 200:
-            logger.error("Could not ingest mmd file %s. Reason: %s" %(file,msg))
-
+            logger.error("Could not ingest mmd file %s. Reason: %s" % (file, msg))
 
     """
-    TODO: Add check here after ingestion is finished to check if we have the same number of records as input files.
+    TODO: Add check here after ingestion is finished to check
+    if we have the same number of records as input files.
     """
     # num_files = len(fileList)
     # pycsw_url = os.getenv('PYCSW_URL')
     # solr_url = os.getenv('SOLR_URL')
     # check_integrety(num_files,pycsw_url,solr_url)
+
+    # End time taking.
+    et = time.perf_counter()
+    pet = time.process_time()
+    elapsed_time = et - st
+    pelt = pet - pst
+    logger.info('Execution time:', time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+    logger.info('CPU time:', time.strftime("%H:%M:%S", time.gmtime(pelt)))
+
     sys.exit(0)
+
+
 if __name__ == "__main__":
     enabled = os.getenv('CATALOG_REBUILDER_ENABLED')
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
