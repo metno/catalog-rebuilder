@@ -225,8 +225,8 @@ def main(archive_path, dmci_url, parent_uuid_list):
     pet = time.process_time()
     elapsed_time = et - st
     pelt = pet - pst
-    logger.info('Execution time:', time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
-    logger.info('CPU time:', time.strftime("%H:%M:%S", time.gmtime(pelt)))
+    logger.info('Execution time: %s', time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+    logger.info('CPU time: %s', time.strftime("%H:%M:%S", time.gmtime(pelt)))
 
     sys.exit(0)
 
