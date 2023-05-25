@@ -11,11 +11,14 @@ The package reads the following environment variables.
 * `CATALOG_REBUILDER_ENABLED` If `true` or `True` the catalog will be rebuilt. If not set or other values, rebuilding will not execute.
 * `MMD_ARCHIVE_PATH` the local path to look for the **mmd-archive**.
 * `DMCI_REBUILDER_URL` the url for the custom rebuilder instance of DMCI.
-* `PYCSW_URL` the url for CSW.
-* `SOLR_URL` the url for Solr. (**Not needed at this moment**)
+* `PARENT_UUID_LIST`the full path to the parent-uuid-list.xml. If not provided,
+it will look for the file in /parent-uuid-list.xml
 * `DEBUG` set this to other than blank to enable debugging
 
+## DMCI Sidecar
 
+The catalog-rebuilder will use its own dmci sidecar for ingestion. The DMCI can then be tailored for which distributors
+and enpoints (SolR, pycsw) to use for the ingestion.
 
 ## License
 
