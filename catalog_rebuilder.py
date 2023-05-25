@@ -24,6 +24,7 @@ import os
 import fnmatch
 import sys
 import time
+from lxml import etree
 from pathlib import Path
 from time import sleep
 import logging
@@ -40,7 +41,7 @@ logger.addHandler(stream_handler)
 
 
 # Function for concerrntly process list of inputs using multithreading
-def concurrently(fn, inputs, *, max_concurrency=10):
+def concurrently(fn, inputs, *, max_concurrency=20):
     """
     Calls the function ``fn`` on the values ``inputs``.
     ``fn`` should be a function that takes a single input, which is the
@@ -86,6 +87,24 @@ def getListOfFiles(dirName):
     if len(listOfFiles) == 0:
         return None
     return listOfFiles
+
+
+def getParentUUIDs(xmlfile):
+    """Function that reads the parent-uuid-list.xml file and
+    return a list of parent UUIDs"""
+
+    try:
+        parent_list = etree.parse(xmlfile)
+    except Exception as e:
+        logger.error("Could not parse the parent-uuid-list.xml, Reason: %s", e)
+        sys.exit(1)
+
+    _parentList = parent_list.findall('id')
+    parentList = []
+    for p in _parentList:
+        parentList.append(p.text)
+
+    return parentList
 
 
 def loadFile(filename):
@@ -139,22 +158,21 @@ def dmci_ingest(dmci_url, mmd):
     return response.status_code, response.text
 
 
-def main():
+def main(archive_path, dmci_url, parent_uuid_list):
     """
     Main function. Get a list of all mmd files in archive and ingest them into custom
     dmci with only csw distributor (solr to be added when ready).
     """
-    # Wait a bit to be sure the dmci-catalog-rebuilder is up and running
-    sleep(60)
 
-    archive_path = os.getenv('MMD_ARCHIVE_PATH')
     if not os.path.exists(archive_path):
         logger.error("Could not read from archive path %s" % archive_path)
         sys.exit(1)
-    logger.debug("Reading from archive path %s" % archive_path)
+    logger.info("Reading from archive path %s" % archive_path)
 
     dmci_url = os.getenv('DMCI_REBUILDER_URL')
-    logger.debug("DMCI rebuilder url is %s" % dmci_url)
+    logger.info("DMCI rebuilder url is %s" % dmci_url)
+
+    parentList = getParentUUIDs(parent_uuid_list)
 
     # Keep track of time taken for job.
     st = time.perf_counter()
@@ -165,7 +183,26 @@ def main():
         logger.error("No MMD files found in archive_path: %s", archive_path)
         sys.exit(1)
 
+    """Extract the parent mmd files from the list."""
+    parent_mmds = [s for s in fileList if any(xs in s for xs in parentList)]
+    logger.info("Found %d parent datasets", len(parent_mmds))
     logger.info("Files to process: %s ", len(fileList))
+
+    # Wait a bit to be sure the dmci-catalog-rebuilder is up and running
+    logger.info("Sleeping for one minute to make sure sidecar is running.")
+    sleep(60)
+    logger.info("Starting catalog rebuilding....")
+
+    """First we ingest the parents."""
+    for parent in parent_mmds:
+        parent_mmd = loadFile(parent)
+        logger.debug("Processing parent file: %s", parent)
+        status, msg = dmci_ingest(dmci_url, parent_mmd)
+        if status != 200:
+            logger.error("Could not ingest parent mmd file %s. Reason: %s" % (parent, msg))
+        fileList.remove(parent)
+
+    """Then we ingest all the rest"""
     for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
 
         # Get the processed document and its status
@@ -199,9 +236,24 @@ if __name__ == "__main__":
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
     dmci_url = os.getenv('DMCI_REBUILDER_URL')
 
+    if os.getenv('PARENT_UUID_LIST'):
+        parent_uuid_list = os.getenv('PARENT_UUID_LIST')
+    else:
+        parent_uuid_list = '/parent-uuid-list.xml'
+
+    if not os.path.exists(parent_uuid_list):
+        logger.error("Missing parents-uuid-list.xml from path %s", parent_uuid_list)
+        sys.exit(1)
+    if os.path.exists(parent_uuid_list):
+        logger.info("Found parent-uuid-list.xml in %s", parent_uuid_list)
     if os.getenv('DEBUG') is not None:
+        logger.info("Setting loglevel to DEBUG")
         logger.setLevel(logging.DEBUG)
         stream_handler.setLevel(logging.DEBUG)
+    else:
+        logger.info("Log level is INFO")
+        logger.setLevel(logging.INFO)
+        stream_handler.setLevel(logging.INFO)
     if archive_path is None:
         logger.error("Missing environment variable MMD_ARCHIVE_PATH")
         sys.exit(1)
@@ -210,7 +262,7 @@ if __name__ == "__main__":
         sys.exit(1)
     if enabled == 'True' or enabled == 'true':
         logger.info("Catalog rebuilder enabled. --starting job-- ")
-        main()
+        main(archive_path, dmci_url, parent_uuid_list)
     else:
         logger.info("Catalog rebuilder disabled. --skipping job-- ")
         sleep(60)
