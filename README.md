@@ -14,6 +14,12 @@ The package reads the following environment variables.
 * `PARENT_UUID_LIST`the full path to the parent-uuid-list.xml. If not provided,
 it will look for the file in /parent-uuid-list.xml
 * `DEBUG` set this to other than blank to enable debugging
+* `DMCI_CONFIG` the dmci config
+* `PG_CSW_USERNAME` the pycsw postgresql username
+* `PG_CSW_PASSWORD` the pycsw postgresql password
+* `SOLR_USERNAME` the solr username
+* `SOLR_PASSWORD` the solr password
+
 
 ## DMCI Sidecar
 

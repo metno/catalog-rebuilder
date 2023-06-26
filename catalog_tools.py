@@ -16,17 +16,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-import itertools
-import requests
-import os
-import fnmatch
-import sys
-import time
-from lxml import etree
-from pathlib import Path
-from time import sleep
+
 import logging
-import psycopg2
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -44,6 +35,7 @@ def csw_getCount(connection):
     cur = connection.cursor()
     cur.execute("""SELECT COUNT(*) FROM RECORDS""")
     result = cur.fetchall()
+    cur.close()
     return result.pop()[0]
 
 
@@ -51,10 +43,12 @@ def csw_truncateRecords(connection):
     try:
         cur = connection.cursor()
         cur.execute("""TRUNCATE TABLE RECORDS""")
+        cur.close()
         # result = cur.fetchall()
         return True, "OK"
     except Exception as e:
         return False, e
+
 
 def rejected_delete(folder):
     try:
@@ -64,3 +58,10 @@ def rejected_delete(folder):
         return False, e
     return True, "OK"
 
+
+def get_xml_file_count(folder):
+    filelist = list(Path(folder).glob('*.xml'))
+    if filelist is None:
+        return 0
+    else:
+        return len(filelist)

@@ -1,37 +1,276 @@
 <html>
 
-  <head>
+<head>
 
-    <title>S-ENDA Catalog status</title>
+  <title>S-ENDA Catalog Admin page</title>
 
-  </head>
+</head>
 
-  <body>
-
-    <h1>Catalog integrity</h1>
-<table>
+<body>
+  <h1>Catalog Admin</h1>
+  <h2>Catalog status</h2>
+  <table>
     <tr>
       <th>Distributor</th>
       <th>Count</th>
+      <th>Action</th>
+      <th>Status</th>
+
     </tr>
-<tr>
-<td>Archive files</td>
-<td> {{ archive_files }}</td>
-</tr>
-<tr>
-<td>CSW Records</td>
-<td>{{ pycsw_records }}</td>
-</tr>
-<tr>
-<td>Solr Documents</td>
-<td>{{ solr_docs }}</td>
-</td>
-</tr>
-</table>
+    <tr>
+      <td>Archive files: </td>
+      <td> {{ archive_files }}</td>
+    </tr>
+    <tr>
+      <form action="{{ url_for('clean_pycsw')}}" method="POST" onsubmit="return cleanCSW();">
+        <td>CSW Records: </td>
+        <td id="csw-recs">{{ csw_records }}</td>
+        <td><input id="clean-csw" type="submit" name="submit" value="Clean PYCSW"></td>
+      </form>
+    </tr>
+    <tr>
+      <form action="{{ url_for('clean_solr')}}" method="POST" onsubmit="return cleanSolR();">
+        <td>Solr Documents: </td>
+        {% if solr_current is sameas true %}
+        <td id="sor-docss">{{ solr_docs }}</td>
+        {% else %}
+        <td id="solr_docs"><s>{{ solr_docs }}</s></td>
+        {% endif %}
+        <td><input id="clean-solr" type="submit" name="submit" value="Clean SolR"></td>
+      </form>
+    </tr>
+  </table>
+
+  <h2>DMCI</h2>
+  <table>
+    <tr>
+      <form action="{{ url_for('clean_rejected')}}" method="POST" onsubmit="return deleteRejected();">
+        <td>Rejected files: </td>
+        <td>{{ rejected_files }}</td>
+        <td><input id="clean-rejected" type="submit" name="submit" value="Clean Rejected folder"></td>
+      </form>
+    </tr>
+    <tr>
+      <td>Distributor cache (workdir): </td>
+      <td>{{ workdir_files }}</td>
+      </td>
+    </tr>
+  </table>
+
+  <h2>Catalog rebuilder</h2>
+  <ol>
+    <li>Clean solr index</li>
+    <li>Clean csw database</li>
+    <li>Rebuild catalog</li>
+  </ol>
+  <form id="rebuild-form" action="{{ url_for('rebuild_catalog')}}" method="POST" name="rebuild">
+    <fieldset>
+      <legend>Select catalogs to rebuild</legend>
+      <input type="checkbox" name="dist" value="pycsw" id="rebuild-pycsw" checked>
+      <label for="rebuild-pycsw">pyCSW</label><br />
+      <input type="checkbox" name="dist" value="solr" id="rebuild-solr" checked>
+      <label for="rebuild-solr">SolR</label><br />
+    </fieldset>
+    <fieldset>
+      <legend>Select DMCI method</legend>
+      <input type="radio" name="action" id="dmci-insert" value="insert" checked />
+      <label for="dmci-insert">Insert</label><br />
+      <input type="radio" name="action" id="dmci-update" value="update" />
+      <label for="dmci-update">Update</label><br />
+    </fieldset>
+    <input id="current-task" type="hidden" name="current_task_id" value="{{ current_task }}"/>
+    <input id="rebuild-catalog" type="submit" name="submit" value="Start Catalog rebuilding"/>
+    {% if current_task != None %}
+    <input id="cancel-task" type="button" name="cancel-task" value="Cancel current task"/>
+    {% else %}
+    <input id="cancel-task" type="hidden" name="cancel-task" value="Cancel current task"/>
+    {% endif %}
+  </form>
+  {% if prev_task_status != None %}
+  <span id="previous-task">Previous job status: {{ prev_task_status }}</span>
+  {% endif %}
+  <div id="progress"></div>
+
+  <script src="//cdnjs.cloudflare.com/ajax/libs/nanobar/0.2.1/nanobar.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+  <script>
+    $("#rebuild-form").submit(function (e) {
+      e.preventDefault(); // avoid to execute the actual submit of the form.
+      if (confirm("Are you sure you wish to rebuild the catalog with the selected settings?") == false) {
+        return false
+      } else {
+        var form = $(this);
+        var actionUrl = form.attr('action');
+
+        div = $('<div class="progress"><div></div><div>0%</div><div>...</div><div>&nbsp;</div></div><hr>');
+        $('#progress').append(div);
+
+        // create a progress bar
+        var nanobar = new Nanobar({
+          bg: '#44f',
+          target: div[0].childNodes[0]
+        });
 
 
+        $.ajax({
+          type: "POST",
+          url: actionUrl,
+          data: form.serialize(), // serializes the form's elements.
+          success: function (data, status, request) {
+            status_url = request.getResponseHeader('Location');
+            console.log(status_url);
+            update_progress(status_url, nanobar, div[0]);
+            window.location = '/admin';
+          },
+          error: function () {
+            alert('Unexpected error');
+          }
+        });
+      }
+    });
+    function start_rebuilder() {
+      // add task status elements
+      div = $('<div class="progress"><div></div><div>0%</div><div>...</div><div>&nbsp;</div></div><hr>');
+      $('#progress').append(div);
 
-  </body>
+      // create a progress bar
+      var nanobar = new Nanobar({
+        bg: '#44f',
+        target: div[0].childNodes[0]
+      });
+
+      // send ajax POST request to start background job
+      $.ajax({
+        type: 'POST',
+        url: '/rebuild',
+        success: function (data, status, request) {
+          status_url = request.getResponseHeader('Location');
+          console.log(status_url);
+          update_progress(status_url, nanobar, div[0]);
+        },
+        error: function () {
+          alert('Unexpected error');
+        }
+      });
+    }
+    function update_progress(status_url, nanobar, status_div) {
+      // send GET request to status URL
+      $.getJSON(status_url, function (data) {
+        // update UI
+        percent = parseInt(data['current'] * 100 / data['total']);
+        nanobar.go(percent);
+        $(status_div.childNodes[1]).text(percent + '%');
+        $(status_div.childNodes[2]).text(data['status']);
+        if (data['state'] != 'PENDING' && data['state'] != 'PROGRESS') {
+          if ('result' in data) {
+            // show result
+            $(status_div.childNodes[3]).text('Result: ' + data['result']);
+          }
+          else {
+            // something unexpected happened
+            $(status_div.childNodes[3]).text('Result: ' + data['state']);
+          }
+        }
+        else {
+          // rerun in 2 seconds
+          setTimeout(function () {
+            update_progress(status_url, nanobar, status_div);
+          }, 5000);
+        }
+      });
+    }
+    // $(function() {
+    //     $('#rebuild-catalog').click(start_rebuilder);
+    // });
+
+    function clean_rejected() {
+      // add task status elements
+      div = $('<div class="progress"><div></div><div>0%</div><div>...</div><div>&nbsp;</div></div><hr>');
+      $('#progress').append(div);
+
+      // create a progress bar
+      var nanobar = new Nanobar({
+        bg: '#44f',
+        target: div[0].childNodes[0]
+      });
+
+      // send ajax POST request to start background job
+      $.ajax({
+        type: 'POST',
+        url: '/rebuild',
+        success: function (data, status, request) {
+          status_url = request.getResponseHeader('Location');
+          update_progress(status_url, nanobar, div[0]);
+          window.location = '/admin'
+        },
+        error: function () {
+          alert('Unexpected error');
+        }
+      });
+    }
+
+    function deleteRejected() {
+      if (confirm("Are you sure you wish to delete all rejected files?") == false) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+    function cleanCSW() {
+      if (confirm("Are you sure you wish to delete all csw records?") == false) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+    function cleanSolR() {
+      if (confirm("Are you sure you wish to delete all solr documents in index?") == false) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+
+    $("#cancel-task").click(function() {
+      $.ajax({
+        type: 'POST',
+        url: '/rebuild/cancel',
+        success: function (data, status, request) {
+          console.log("Success")
+          $("progress").empty();
+          window.location = '/admin';
+        },
+        error: function () {
+          alert('Unexpected error');
+        }
+      });
+    });
+
+    $(document).ready(function() {
+      task_id = $("#current-task").val();
+      if (task_id === "None") {
+        console.log("No running tasks");
+      }
+      else {
+        console.log("Task running: " + task_id);
+        $("#rebuild-catalog").attr('disabled', true)
+
+        div = $('<div class="progress"><div></div><div>0%</div><div>...</div><div>&nbsp;</div></div><hr>');
+        $('#progress').append(div);
+
+        // create a progress bar
+        var nanobar = new Nanobar({
+          bg: '#44f',
+          target: div[0].childNodes[0]
+        });
+
+        status_url = '/status/' + task_id;
+        update_progress(status_url, nanobar, div[0])
+      }
+
+    });
+  </script>
+
+</body>
 
 </html>
-

@@ -23,25 +23,295 @@ import requests
 import os
 import fnmatch
 import sys
+import shutil
 import time
 from lxml import etree
 from pathlib import Path
 from time import sleep
 import logging
+from celery import Celery
+from itertools import islice
+from celery import TaskSet, task
+
+import dmci
+from dmci.api.worker import Worker as DmciWorker
+from dmci.api.app import App
+from dmci.config import Config
+from dmci.distributors.distributor import Distributor as DmciDist
+
+from dmci.distributors import SolRDist, PyCSWDist
+
+import dmci.distributors.distributor
+from solrindexer.indexdata import IndexMMD
+from requests.auth import HTTPBasicAuth
+
+import asyncio
+from aiohttp import ClientSession
+
+# import dmci
+# from dmci.api.worker import Worker
+# from main import CONFIG
+
+CONFIG = Config()
+if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
+    sys.exit(1)
+
+dmci.CONFIG = CONFIG
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
-formatter = logging.Formatter('%(name)s:%(asctime)s:%(levelname)s:%(message)s')
+formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:{lineno:<4d} {levelname:8s} {message:}',
+                              style="{")
+
+INDEX_ARCHIVE = '/home/magnarem/tmp/mmd-xml-dev/'
 
 stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
+stream_handler.setLevel(logging.DEBUG)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
+logging.getLogger('solrindexer').setLevel(logging.WARNING)
+# logging.getLogger('dmci').setLevel(logging.DEBUG)
 
+# logging.getLogger('pysolr').setLevel(logging.INFO)
+
+authentication = None
+if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
+    authentication = HTTPBasicAuth(CONFIG.solr_username,
+                                   CONFIG.solr_password)
+indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
+                    authentication=authentication)
+
+
+class Distributor(DmciDist):
+    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
+        logger.debug("I am custom distributor")
+        super().__init__(cmd, xml_file=None, metadata_id=None, worker=None, **kwargs)
+
+        self._conf = CONFIG
+        dmci.CONFIG = CONFIG
+
+        return
+
+
+dmci.distributors.distributor.Distributor = Distributor
+
+
+class CRPyCSWMDist(PyCSWDist):
+    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
+        super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
+        logger.debug("I am custom pycsw  dist class")
+        self._conf = CONFIG
+        return
+
+
+class CRSolrDist(SolRDist):
+    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
+        super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
+        logger.debug("I am custom solr dist class")
+        self._conf = CONFIG
+        self._conf.fail_on_missing_parent = False
+        self.authentication = self._init_authentication()
+
+        #  Create connection to solr
+        self.mysolr = indexMMD
+        self.mysolr.solr_url = self._conf.solr_service_url
+        logger.debug(self._conf.solr_service_url)
+        return
+
+
+class Worker(DmciWorker):
+
+    CALL_MAP = {
+        "pycsw": CRPyCSWMDist,
+        "solr": CRSolrDist
+    }
+
+    def __init__(self, cmd, xml_file, xsd_validator, dist_call, **kwargs):
+        super().__init__(cmd, xml_file, xsd_validator, **kwargs)
+        self._conf = CONFIG
+        self._conf.call_distributors = dist_call
+        dmci.CONFIG = CONFIG
+        logger.debug("command:  %s", self._dist_cmd)
+        logger.debug("dists:  %s", self._conf.call_distributors)
+        logger.debug("xsd:  %s", self._xsd_obj)
+        logger.debug("csw url:  %s", self._conf.csw_service_url)
+        logger.debug("solr url:  %s", self._conf.solr_service_url)
+
+        return
+
+
+app = Celery('rebuilder',
+             broker='redis://localhost:6379/0')
+app.conf.update(broker_url='redis://localhost:6379/',
+                result_backend='redis://localhost:6379/',
+                task_serializer='json',
+                accept_content=['json'],  # Ignore other content
+                result_serializer='json',
+                timezone='Europe/Oslo',
+                enable_utc=True,
+                broker_connection_retry_on_startup=True
+                )
+
+
+@app.task(bind=True)
+def rebuild_task(self, action, parentlist_path, call_distributors):
+    logger.info("Requested task %s", self.request.id)
+    logger.debug("Call distributors: %s", call_distributors)
+    logger.debug("parent list path %s", parentlist_path)
+    dmci.config = CONFIG
+    dmci.distributors.distributor.Distributor = Distributor
+
+    """Initialize xsdobj"""
+    # Create the XML Validator Object
+    xsd_obj = None
+    try:
+        xsd_obj = etree.XMLSchema(
+            etree.parse(CONFIG.mmd_xsd_path))
+    except Exception as e:
+        logger.critical("XML Schema could not be parsed: %s" %
+                        str(CONFIG.mmd_xsd_path))
+        logger.critical(str(e))
+        sys.exit(1)
+
+    """Catalog rebuilder catalog task."""
+    dmci_url = os.environ.get('DMCI_REBUILDER_URL', None)
+    if dmci_url is None:
+        dmci_url = "http://localhost:5000"
+    logger.info("DMCI rebuilder url is %s" % dmci_url)
+
+    self.update_state(state='PENDING',
+                      meta={'current': 0, 'total': 1, 'status': 'Cloning MMD repo.'})
+    # cloneRepo()
+    # index_archive = os.environ.get("INDEX_ARCHIVE", None)
+    # if index_archive is not None:
+    #    INDEX_ARCHIVE = index_archive
+    fileList = getListOfFiles(INDEX_ARCHIVE)
+    total = len(fileList)
+    current = 0
+    self.update_state(state='PROGRESS',
+                      meta={'current': current, 'total': total, 'status': 'Preparing parents'})
+
+    parentList = getParentUUIDs(parentlist_path)
+
+    # Keep track of time taken for job.
+    st = time.perf_counter()
+    pst = time.process_time()
+
+    if fileList is None:
+        logger.error("No MMD files found in archive_path: %s", archive_path)
+        return {'status': 'No files found in archive path.'}
+
+    """Extract the parent mmd files from the list."""
+    parent_mmds = [s for s in fileList if any(xs in s for xs in parentList)]
+    logger.info("Found %d parent datasets", len(parent_mmds))
+    logger.info("Files to process: %s ", len(fileList))
+
+    # Wait a bit to be sure the dmci-catalog-rebuilder is up and running
+    logger.info("Sleeping for one minute to make sure sidecar is running.")
+
+    logger.info("Starting catalog rebuilding....")
+    sleep(5)
+    """First we ingest the parents."""
+
+    for (file, parent_mmd) in concurrently(fn=loadFile, inputs=parent_mmds):
+        logger.debug("Processing parent file: %s", file)
+        status, msg = dmci_dist_ingest(parent_mmd, file, action, call_distributors, xsd_obj)
+        current += 1
+        self.update_state(state='PROGRESS',
+                          meta={'current': current, 'total': total,
+                                'status': 'Processing parents'})
+        if status is False:
+            logger.error(
+                "Could not ingest parent mmd file %s. Reason: %s", file, msg)
+        fileList.remove(file)
+
+    logger.debug("Processed %d parents", current)
+    sleep(5)
+    """Then we ingest all the rest"""
+    # mystep = 1
+    # for i in range(0, len(fileList), mystep):
+    #    mylist = fileList[i:i+mystep]
+    # mmdList = list()
+    self.update_state(state='PROGRESS',
+                      meta={'current': current, 'total': total,
+                            'status': 'Processing MMD files'})
+    Futures.ALL_COMPLETED
+
+    for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
+        # mmdList.append(mmd)
+        # status, msg = dmci_ingest(dmci_url, mmd, action)
+        logger.debug("Processing MMD file: %s", file)
+        status, msg = dmci_dist_ingest(mmd, file, action, call_distributors, xsd_obj)
+        if status is False:
+            logger.error("Could not prccess file %s. Reason: %s", file, msg)
+            # current += 1
+        current += 1
+        self.update_state(state='PROGRESS',
+                          meta={'current': current, 'total': total,
+                                'status': 'Processing MMD files'})
+
+    Futures.ALL_COMPLETED
+    # ASYNC IO TEST NOT WORKING=??
+    # loop = asyncio.get_event_loop()
+    # future = asyncio.ensure_future(ingest_async(loop, mmdList, action, dmci_url))
+    # loop.run_until_complete(future)
+    # responses = future.result()
+    # logger.debug(type(responses))
+    # logger.debug(responses)
+
+    # Normal test
+
+    # Handle the responses from async, and log
+    # if status != 200:
+    #    logger.error("Could not ingest mmd file %s. Reason: %s", file, msg)
+
+    """
+    TODO: Add check here after ingestion is finished to check
+    if we have the same number of records as input files.
+    """
+    # num_files = len(fileList)
+    # pycsw_url = os.getenv('PYCSW_URL')
+    # solr_url = os.getenv('SOLR_URL')
+    # check_integrety(num_files,pycsw_url,solr_url)
+
+    # End time taking.
+    et = time.perf_counter()
+    pet = time.process_time()
+    elapsed_time = et - st
+    pelt = pet - pst
+    logger.info('Execution time: %s', time.strftime(
+        "%H:%M:%S", time.gmtime(elapsed_time)))
+    logger.info('CPU time: %s', time.strftime("%H:%M:%S", time.gmtime(pelt)))
+    job_time = time.strftime("%H:%M:%S", time.gmtime(pelt))
+    self.update_state(state='SUCCESS',
+                      meta={'current': current, 'total': total,
+                            'status': 'Catalog rebuilding completed in {0}'.format(job_time)}
+                      )
+
+    return {'status': 'Catalog rebuilding completed in {0}'.format(job_time),
+            'current': current, 'total': total}
+
+
+def processFile(file):
+    """Process one mmd file, using the DMCI worker"""
+    return NotImplementedError
+
+
+def cloneRepo():
+    """ Updates the repo"""
+    if os.path.exists(INDEX_ARCHIVE):
+        shutil.rmtree(INDEX_ARCHIVE)
+    destination_path = INDEX_ARCHIVE
+    clone_command = "git clone https://k8s-dmci-dev:dQyq95s3zs3VrpRLLVxm@gitlab.met.no/mmd/mmd-xml-dev.git"
+
+    clone_with_path = clone_command + " " + destination_path
+    os.system(clone_with_path)
 
 # Function for concerrntly process list of inputs using multithreading
-def concurrently(fn, inputs, *, max_concurrency=20):
+
+
+def concurrently(fn, inputs, *, max_concurrency=5):
     """
     Calls the function ``fn`` on the values ``inputs``.
     ``fn`` should be a function that takes a single input, which is the
@@ -89,6 +359,12 @@ def getListOfFiles(dirName):
     return listOfFiles
 
 
+def chunks(it, n):
+    """Slice an array into chunks and return chunk"""
+    for first in it:
+        yield [first] + list(islice(it, n - 1))
+
+
 def getParentUUIDs(xmlfile):
     """Function that reads the parent-uuid-list.xml file and
     return a list of parent UUIDs"""
@@ -102,7 +378,8 @@ def getParentUUIDs(xmlfile):
     _parentList = parent_list.findall('id')
     parentList = []
     for p in _parentList:
-        parentList.append(p.text)
+        pid = str(p.text)
+        parentList.append(pid.split(':')[1])
 
     return parentList
 
@@ -121,7 +398,8 @@ def loadFile(filename):
         try:
             xmlfile = fd.read()
         except Exception as e:
-            logger.error('Clould not read file %s error was %s' % (filename, e))
+            logger.error('Clould not read file %s error was %s' %
+                         (filename, e))
             return None
         return xmlfile.encode()
 
@@ -140,22 +418,124 @@ def check_integrety(num_files, dmci_status_endpoint):
     raise NotImplementedError
 
 
-def dmci_ingest(dmci_url, mmd):
+@app.task()
+def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
+    """Using the distributors directly ingesting"""
+    status = False
+    worker = Worker(action, mmd_path, xsd_obj, call_distributors,
+                    path_to_parent_list=CONFIG.path_to_parent_list,
+                    md_namespace=CONFIG.env_string)
+    valid, msg, data_ = worker.validate(data)
+    if not data == data_:
+        msg, code = App._persist_file(data_, mmd_path)
+    if valid is True:
+        status = True
+        valid = True
+        called = []
+        failed = []
+        skipped = []
+        failed_msg = []
+
+        for dist in call_distributors:
+            if dist not in worker.CALL_MAP:
+                skipped.append(dist)
+                continue
+            obj = worker.CALL_MAP[dist](
+                worker._dist_cmd,
+                xml_file=mmd_path,
+                metadata_id=worker._dist_metadata_id,
+                worker=worker,
+                path_to_parent_list=CONFIG.path_to_parent_list
+            )
+            obj._conf = CONFIG
+            valid &= obj.is_valid()
+            if obj.is_valid():
+                obj._conf = CONFIG
+                obj_status, obj_msg = obj.run()
+                status &= obj_status
+                if obj_status:
+                    called.append(dist)
+                else:
+                    failed.append(dist)
+                    failed_msg.append(obj_msg)
+            else:
+                skipped.append(dist)
+        if len(failed) > 0:
+            msg = '\n'.join([msg for msg in failed_msg])
+            status = False
+        else:
+            status = True
+            msg = "OK"
+
+    else:
+        logger.error("File %s failed validation. Reason: %s", mmd_path, msg)
+
+    return status, msg
+
+
+def dmci_ingest(dmci_url, mmd, action):
     """
     Given url + endpoint for dmci instance,
     insert the given file.
     """
-    url = dmci_url + '/v1/insert'
+    if action == 'insert':
+        url = dmci_url + '/v1/insert'
+
+    elif action == 'update':
+        url = dmci_url + '/v1/update'
+
+    else:
+        url = dmci_url + '/v1/insert'
+
     try:
         response = requests.post(url, data=mmd)
+
     except ConnectionError as e:
-        logger.error("Could not connect to DMCI rebuilder endpoint %s. Reason: %s" % (url, e))
-        sys.exit(1)
+        logger.error(
+            "Could not connect to DMCI rebuilder endpoint %s. Reason: %s", url, e)
+
     except Exception as e:
         logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s",
-                     (url, e))
-        sys.exit(1)
+                     url, e)
+
     return response.status_code, response.text
+
+
+async def dmci_ingest_async(session, dmci_url, mmd, action):
+    """
+    Given url + endpoint for dmci instance,
+    insert the given file.
+    """
+    if action == 'insert':
+        url = dmci_url + '/v1/insert'
+
+    elif action == 'update':
+        url = dmci_url + '/v1/update'
+
+    else:
+        url = dmci_url + '/v1/insert'
+
+    try:
+        # response = requests.post(url, data=mmd)
+        async with session.post(url, data=mmd, timeout=10) as response:
+            response = await response.read()
+    except Exception as e:
+        logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s",
+                     url, e)
+    else:
+        return response
+
+    return
+
+
+async def ingest_async(loop, mmdlist, action, dmci_url):
+    tasks = []
+    async with ClientSession() as session:
+        for mmd in mmdlist:
+            task = asyncio.ensure_future(dmci_ingest_async(session, dmci_url, mmd.encode(), action))
+            tasks.append(task)
+        responses = await asyncio.gather(*tasks)
+    return responses
 
 
 def main(archive_path, dmci_url, parent_uuid_list):
@@ -199,7 +579,8 @@ def main(archive_path, dmci_url, parent_uuid_list):
         logger.debug("Processing parent file: %s", parent)
         status, msg = dmci_ingest(dmci_url, parent_mmd)
         if status != 200:
-            logger.error("Could not ingest parent mmd file %s. Reason: %s" % (parent, msg))
+            logger.error(
+                "Could not ingest parent mmd file %s. Reason: %s" % (parent, msg))
         fileList.remove(parent)
 
     """Then we ingest all the rest"""
@@ -209,7 +590,8 @@ def main(archive_path, dmci_url, parent_uuid_list):
         logger.debug("Processing file: %s", file)
         status, msg = dmci_ingest(dmci_url, mmd)
         if status != 200:
-            logger.error("Could not ingest mmd file %s. Reason: %s" % (file, msg))
+            logger.error("Could not ingest mmd file %s. Reason: %s" %
+                         (file, msg))
 
     """
     TODO: Add check here after ingestion is finished to check
@@ -225,7 +607,8 @@ def main(archive_path, dmci_url, parent_uuid_list):
     pet = time.process_time()
     elapsed_time = et - st
     pelt = pet - pst
-    logger.info('Execution time: %s', time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+    logger.info('Execution time: %s', time.strftime(
+        "%H:%M:%S", time.gmtime(elapsed_time)))
     logger.info('CPU time: %s', time.strftime("%H:%M:%S", time.gmtime(pelt)))
 
     sys.exit(0)
@@ -242,7 +625,8 @@ if __name__ == "__main__":
         parent_uuid_list = '/parent-uuid-list.xml'
 
     if not os.path.exists(parent_uuid_list):
-        logger.error("Missing parents-uuid-list.xml from path %s", parent_uuid_list)
+        logger.error("Missing parents-uuid-list.xml from path %s",
+                     parent_uuid_list)
         sys.exit(1)
     if os.path.exists(parent_uuid_list):
         logger.info("Found parent-uuid-list.xml in %s", parent_uuid_list)

@@ -22,21 +22,39 @@ limitations under the License.
 import os
 import sys
 
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
 from dmci.config import Config
 
-# Create config object
 CONFIG = Config()
 
 
 def main():
     """This is the main entry point."""
     from catalog_flask import AdminApp
+    os.curdir = os.path.abspath(os.path.dirname(__file__))
+    if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
+        sys.exit(1)
+    app = AdminApp()
+    sys.exit(app.run(port=5000, debug=True))
+
+
+def create_app():
+    """This is the wsgi entry point."""
+    from catalog_flask import AdminApp
+    from browsepy import app as browsepyApp
 
     if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
         sys.exit(1)
+    browsepyApp.config.update(APPLICATION_ROOT='/browsepy',
+                              directory_base=CONFIG.rejected_jobs_path,
+                              directory_remove=None,
+                              )
+    rebuilderApp = AdminApp()
+    app = DispatcherMiddleware(rebuilderApp, {'/dmci/rejected': browsepyApp})
 
-    app = AdminApp()
-    sys.exit(app.run(port=5000, debug=True))
+    # app = AdminApp()
+    return app
 
 
 if __name__ == '__main__':

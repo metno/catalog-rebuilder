@@ -16,32 +16,22 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-
 import os
 import sys
 import logging
 import psycopg2
 
-import catalog_rebuilder as cb
-from catalog_tools import csw_getCount, rejected_delete, csw_truncateRecords
+from catalog_rebuilder import rebuild_task, getListOfFiles
+from catalog_tools import csw_getCount, rejected_delete, csw_truncateRecords, get_xml_file_count
 
-from lxml import etree
 
-from flask import Flask, render_template, request, flash, send_from_directory, json, Response
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import generate_password_hash, check_password_hash
-
 from requests.auth import HTTPBasicAuth as BasicAuth
-
-from filebrowser.funcs import get_size, diff, folderCompare
-
-from dmci.config import Config
 from solrindexer import IndexMMD
 
-from browsepy import app as browsepy, plugin_manager
-
-CONFIG = Config()
+from main import CONFIG
 
 users = {
     "admin": generate_password_hash("test"),
@@ -61,13 +51,12 @@ logger.addHandler(stream_handler)
 
 class AdminApp(Flask):
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
+            sys.exit(1)
         super().__init__(__name__)
 
-        """ Initialize DMCI Config"""
-        CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None))
         self._conf = CONFIG
-        self.auth = HTTPBasicAuth()
 
         if self._conf.distributor_cache is None:
             logger.error("Parameter distributor_cache in config is not set")
@@ -81,16 +70,16 @@ class AdminApp(Flask):
             logger.error("Parameter path_to_parent_list in config is not set")
             sys.exit(1)
 
-        # Create the XML Validator Object
-        logger.debug("Parsing xsd %s", self._conf.mmd_xsd_path)
-        try:
-            self._xsd_obj = etree.XMLSchema(
-                etree.parse(str(self._conf.mmd_xsd_path).strip()))
-        except Exception as e:
-            logger.critical("XML Schema could not be parsed: %s" %
-                            str(self._conf.mmd_xsd_path))
-            logger.critical(str(e))
-            # sys.exit(1)
+        logger.debug(self._conf.call_distributors)
+
+        """ Initialize APP """
+        self.auth = HTTPBasicAuth()
+        if os.environ.get("TEMPLATE_FOLDER", None) is not None:
+            self.template_folder = os.environ.get("TEMPLATE_FOLDER", None)
+        else:
+            self.template_folder = 'templates'
+        logger.debug(self.template_folder)
+        logger.debug(os.path.abspath(os.path.dirname(__file__)))
 
         """Read CSW CONFIG """
         self.csw_username = os.environ.get("PG_CSW_USERNAME", None)
@@ -101,25 +90,20 @@ class AdminApp(Flask):
                                                user=self.csw_username,
                                                password=self.csw_password,
                                                dbname='csw_db', port=5432)
+        self.csw_connection.autocommit = True
 
         """Solr connection"""
         if self._conf.solr_username is not None and self._conf.solr_password is not None:
             auth = BasicAuth(self._conf.solr_username, self._conf.solr_password)
         else:
             auth = None
-        self.solrc = IndexMMD(self._conf.solr_service_url, authentication=auth)
+        self.mysolr = IndexMMD(self._conf.solr_service_url, authentication=auth)
 
-        """initialize browsepy"""
-        browsepy.config.update(
-            APPLICATION_ROOT='/browse',
-            directory_base=self._conf.rejected_jobs_path,
-            directory_start=self._conf.rejected_jobs_path,
-            directory_remove=self._conf.rejected_jobs_path,
-        )
-        plugin_manager.reload()
+        self.current_task_id = None  # current task id
+        self.task = None  # current running task object
+        self.prev_task_status = None  # Keep track of previous task
 
         # Very password
-
         @self.auth.verify_password
         def verify_password(username, password):
             if username in users and \
@@ -130,38 +114,14 @@ class AdminApp(Flask):
         @self.route("/status")
         def status():
             """ Return integrity status of the catalog. Include number of rejected files"""
-
-            """ Get Archive files list"""
-            archive_files_list = cb.getListOfFiles(
-                self._conf.file_archive_path)
-            if archive_files_list is None:
-                archive_files = 0
-            else:
-                archive_files = len(archive_files_list)
-
-            """ Get Rejected files list"""
-            rejected_files_list = cb.getListOfFiles(
-                self._conf.rejected_jobs_path)
-            if rejected_files_list is None:
-                rejected_files = 0
-            else:
-                rejected_files = len(rejected_files_list)
-
-            """ Get Workdir files list"""
-            workdir_files_list = cb.getListOfFiles(
-                self._conf.distributor_cache)
-            if workdir_files_list is None:
-                workdir_files = 0
-            else:
-                workdir_files = len(workdir_files_list)
-
+            logger.debug(self.template_folder)
+            archive_files = _get_archive_files_count()
+            rejected_files = _get_rejected_files_count()
+            workdir_files = _get_workdir_files_count()
             """ Get CSW records"""
             csw_records = csw_getCount(self.csw_connection)
 
-            """ Get SOLR documents"""
-            solr_status = self.solrc.get_status()
-            solr_docs = solr_status['numDocs']
-            solr_current = solr_status['current']
+            solr_docs, solr_current = _get_solr_count()
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -178,21 +138,30 @@ class AdminApp(Flask):
         def admin():
             """Simple form with buttons to manage rejected files and rebuild catalog.
             Form will have buttons that execute the below POST endpoints"""
-            return render_template("admin.html")
+            archive_files = _get_archive_files_count()
+            rejected_files = _get_rejected_files_count()
+            workdir_files = _get_workdir_files_count()
+            """ Get CSW records"""
+            csw_records = csw_getCount(self.csw_connection)
+            solr_docs, solr_current = _get_solr_count()
 
-        # List Rejected
-        @self.route("/rejected")
-        def list_rejected():
-            """ List files in rejected direcotry. use maybe browsepy or similar
-            """
+            if self.task is not None:
+                logger.debug(self.task.state)
+                if self.task.state == 'FAILURE' or self.task.state == 'SUCCESS':
+                    self.prev_task_status = str(self.task.state) + " : " + str(self.task.info)
+                    self.task = None
+                    self.current_task_id = None
 
-            return NotImplementedError
-
-        # GET All rejected as a zip file
-        @self.route("/rejected/get")
-        def get_rejected():
-            """"Create a zip file of all contents in rejected folder and return"""
-            return NotImplementedError
+            return render_template("admin.html",
+                                   archive_files=archive_files,
+                                   csw_records=csw_records,
+                                   solr_docs=solr_docs,
+                                   solr_current=solr_current,
+                                   rejected_files=rejected_files,
+                                   workdir_files=workdir_files,
+                                   current_task=self.current_task_id,
+                                   prev_task_status=self.prev_task_status,
+                                   )
 
         # POST Clean rejected folder
         @self.route("/rejected/clean", methods=["POST"])
@@ -200,31 +169,49 @@ class AdminApp(Flask):
         def clean_rejected():
             """ Clean / Delete all files in rejected folder"""
             status, msg = rejected_delete(self._conf.rejected_jobs_path)
+            referrer = request.referrer
+            if referrer is not None:
+                if '/admin' in referrer:
+                    return redirect(url_for('admin'))
             if status is True:
                 return {"message": "OK"}, 200
             if status is False:
                 return {"message": msg}, 500
 
-        # POST Clean solr index
+        # POST Delete all solr documents in index
         @self.route("/solr/clean", methods=["POST"])
         @self.auth.login_required
         def clean_solr():
-            """ clean / delete solr index"""
-            return NotImplementedError
+            try:
+                self.mysolr.solrc.delete(q='*:*')
+                self.mysolr.commit()
+                referrer = request.referrer
+                if referrer is not None:
+                    if '/admin' in referrer:
+                        return redirect(url_for('admin'))
 
-        # POST Clean solr index
+                return {"message": "OK"}, 200
+            except Exception as e:
+                return {"message": e}, 500
+
+        # POST Truncate pycsw records talbe
         @self.route("/pycsw/clean", methods=["POST"])
         @self.auth.login_required
         def clean_pycsw():
             """ clean / delete pycsw"""
             status, msg = csw_truncateRecords(self.csw_connection)
+            referrer = request.referrer
+            if referrer is not None:
+                if '/admin' in referrer:
+                    return redirect(url_for('admin'))
+
             if status is True:
                 return {"message": "OK"}, 200
             if status is False:
                 return {"message": msg}, 500
 
         # POST Rebuild catalog.
-        @self.route("/rebild", methods=["POST"])
+        @self.route("/rebuild", methods=["POST"])
         @self.auth.login_required
         def rebuild_catalog():
             """ Rebuld the catalog. given the
@@ -232,66 +219,104 @@ class AdminApp(Flask):
             Input parameters:
             dist : list - list of distributors [solr,pycsw]
             """
-            return NotImplementedError
+            logger.debug("call list given in form %s", request.form.getlist('dist'))
+            logger.debug(request.form.get('action'))
+            distributors = request.form.getlist('dist')
+            dmci_action = str(request.form.get('action'))
+            self._conf.call_distributors = distributors
+            logger.debug("dmci config dist call list: %s", self._conf.call_distributors)
+            try:
+                task = rebuild_task.apply_async([dmci_action,
+                                                 self._conf.path_to_parent_list,
+                                                 distributors])
+                self.current_task_id = task.id
+                self.task = task
 
-        """From filebrowser"""
-        @self.route("/load-data", methods=['POST'])
-        def loaddata():
-            data = request.get_json()
-            name = data['name']
-            folder = data['folder']
-            curr_path = os.path.join(
-                self._conf.rejected_jobs_path, folder, name)
-            folders = []
-            folders_date = []
-            files = []
-            files_size = []
-            files_date = []
-            if folderCompare(self._conf.rejected_jobs_path, curr_path):
-                dir_list = os.listdir(curr_path)
-                for item in dir_list:
-                    if os.path.isdir(os.path.join(curr_path, item)):
-                        folders.append(item)
-                        folder_date = diff(os.path.join(curr_path, item))
-                        folders_date.append(folder_date)
-                for item in dir_list:
-                    if os.path.isfile(os.path.join(curr_path, item)):
-                        files.append(item)
-                        file_size = get_size(os.path.join(curr_path, item))
-                        files_size.append(file_size)
-                        file_date = diff(os.path.join(curr_path, item))
-                        files_date.append(file_date)
+                return jsonify({}), 202, {'Location': url_for('rebuild_taskstatus',
+                                          task_id=task.id)}
+            except Exception as e:
+                message = "Somthing went wrong running task. is redis and celery running? "
+                return message + e, 500
+            # return "OK", 200
 
-                folders_data = list(zip(folders, folders_date))
-                files_data = list(zip(files, files_size, files_date))
+        # POST Rebuild catalog.
+        @self.route("/rebuild/cancel", methods=["POST"])
+        @self.auth.login_required
+        def cancel_rebuild():
+            response = {'state': 'REVOKED',
+                        'current': 1,
+                        'total': 1,
+                        'status': 'Manually canceled',  # this is the exception raised
+                        }
+            if self.task is not None:
+                self.task.revoke(terminate=True)
+                self.prev_task_status = "Revoked" + " : " + "Manually canceled."
+                self.task = None
+                self.current_task_id = None
 
-                return render_template('data.html', folders_data=folders_data, files_data=files_data)
+            return jsonify(response)
+
+        @self.route('/status/<task_id>')
+        def rebuild_taskstatus(task_id):
+            try:
+                task = rebuild_task.AsyncResult(task_id)
+                logger.debug(task.state)
+            except Exception as e:
+                return jsonify({'status': str(e)})
+            if task.state == 'PENDING':
+                response = {
+                    'state': task.state,
+                    'current': 0,
+                    'total': 1,
+                    'status': task.info.get('status', '')
+
+                }
+            elif task.state != 'FAILURE':
+                response = {
+                    'state': task.state,
+                    'current': task.info.get('current', 0),
+                    'total': task.info.get('total', 1),
+                    'status': task.info.get('status', '')
+
+                }
+                if 'result' in task.info:
+                    response['result'] = task.info['result']
             else:
-                return '0', 201
+                # something went wrong in the background job
+                response = {
+                    'state': task.state,
+                    'current': 1,
+                    'total': 1,
+                    'status': str(task.info),  # this is the exception raised
+                }
+                #
+            return jsonify(response)
 
-        @self.route('/info')
-        def info():
-            foldername = os.path.basename(self._conf.rejected_jobs_path)
-            lastmd = diff(self._conf.rejected_jobs_path)
-            dir_list = os.listdir(self._conf.rejected_jobs_path)
-            file = 0
-            folder = 0
-            for item in dir_list:
-                if os.path.isdir(item):
-                    folder += 1
-                elif os.path.isfile(item):
-                    file += 1
-            data = {'foldername': foldername, 'lastmd': lastmd,
-                    'file': file, 'folder': folder}
-            return custom_response(data, 200)
+        def _get_archive_files_count():
+            """Get Archive files list"""
+            archive_files_list = getListOfFiles(
+                self._conf.file_archive_path)
+            if archive_files_list is None:
+                archive_files = 0
+            else:
+                archive_files = len(archive_files_list)
+            return archive_files
 
-        def custom_response(res, status_code):
-            return Response(mimetype="application/json",
-                            response=json.dumps(res), status=status_code)
+        def _get_rejected_files_count():
+            """Get Rejected files list"""
+            rejected_files = get_xml_file_count(
+                self._conf.rejected_jobs_path)
+            return rejected_files
 
-        @self.route('/folderlist', methods=['GET'])
-        def folderlist():
-            curr_path = self._conf.rejected_jobs_path
-            logger.debug("current path:  %s", curr_path)
-            folders = [curr_path]
-            return {"item": folders}
+        def _get_workdir_files_count():
+            """Get Workdir files list"""
+            workdir_files = get_xml_file_count(
+                self._conf.distributor_cache)
+            return workdir_files
+
+        def _get_solr_count():
+            """Get SOLR documents"""
+            solr_status = self.mysolr.get_status()
+            solr_docs = solr_status['numDocs']
+            solr_current = solr_status['current']
+            return solr_docs, solr_current
