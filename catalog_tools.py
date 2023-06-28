@@ -19,6 +19,7 @@ limitations under the License.
 
 import logging
 from pathlib import Path
+import requests
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -65,3 +66,30 @@ def get_xml_file_count(folder):
         return 0
     else:
         return len(filelist)
+
+
+def get_solrstatus(solr_url, authentication=None):
+    """Get SolR core status information"""
+    tmp = solr_url.split('/')
+    core = tmp[-1]
+    base_url = '/'.join(tmp[0:-1])
+    logger.debug("Getting status with url %s and core %s", base_url, core)
+    res = None
+    try:
+        res = requests.get(base_url + '/admin/cores?action=STATUS&core=' + core,
+                           auth=authentication)
+        res.raise_for_status()
+    except requests.exceptions.HTTPError as errh:
+        logger.error("Http Error: %s", errh)
+    except requests.exceptions.ConnectionError as errc:
+        logger.error("Error Connecting: %s", errc)
+    except requests.exceptions.Timeout as errt:
+        logger.error("Timeout Error: %s", errt)
+    except requests.exceptions.RequestException as err:
+        logger.error("OOps: Something Else went wrong: %s", err)
+
+    if res is None:
+        return None
+    else:
+        status = res.json()
+        return status['status'][core]['index']
