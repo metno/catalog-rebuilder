@@ -1,5 +1,5 @@
 """
-Catalog rebuilder - script
+Catalog rebuilder - Flask app
 ====================
 
 Copyright 2021 MET Norway

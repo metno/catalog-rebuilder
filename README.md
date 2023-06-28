@@ -6,7 +6,7 @@ Catalog rebuilder of CSW and Solr for the S-ENDA project.
 
 The catalog-rebuilder consists of three modules.
 
-* `main.py`- Main entrypoint for starting the Flask app
+* `main.py`- Main entrypoint for starting the Flask app or wsgi using create_app()
 * `catalog_flask.py` - A Flask app for getting catalog status and rebuilding the catalog
 * `catalog_rebuilder.py`- The rebuilding code, which is run as a Celery worker process. Imports
 the DMCI package and use the DMCI worker for the processing.
@@ -19,7 +19,7 @@ The catalog-rebuilder will also need a `Redis`-server running.
 ## Environment Variables
 
 The package bootstraps the DMCI module, so all environment variables and a
-extended version of  the DMCI config file are required. See `config_default.yaml`for an example.
+extended version of  the DMCI config file are required. See `config_example.yaml`for an example.
 
 The package reads the following additional environment variables.
 
@@ -41,11 +41,13 @@ The package reads the following additional environment variables.
 * `/rebuild/result`- This endpoint will give back a JSON-object with the result of the ingestion
 * `/dmci/rejected` - Inspect the contents of the DMCI rejected jobs
 * `/dmci/workdir` - Inspect the distributor cache workdir
-
+  
 ## Celery Worker Sidecar
 
 The catalog-rebuilder will use its own Celery worker process in a sidecar, and process using
 DMCI worker object.
+Start celery as such:
+`celery --app catalog_rebuilder.app worker --loglevel=DEBUG`
 
 ## License
 
