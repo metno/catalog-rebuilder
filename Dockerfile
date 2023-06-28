@@ -21,9 +21,11 @@ RUN apt-get -qqy update && \
       python3-pip \
       python3-wheel \
       wget \
-      python3
+      python3 \
+    && rm -rf /var/lib/apt/lists/* && \
+    pip install "gunicorn${GUNICORN_VERSION}"
 
-
+ARG DST=/dst
 # Download MMD and use local copy of schema (see sed command below)
 RUN git config --global advice.detachedHead false
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
@@ -31,7 +33,8 @@ RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
     cp -a /tmp/mmd/xslt/* $DST/usr/share/mmd/xslt && \
     cp -a /tmp/mmd/xsd/* $DST/usr/share/mmd/xsd && \
     sed -Ei 's#http\://www.w3.org/2001/(xml.xsd)#\1#g' $DST/usr/share/mmd/xsd/*.xsd && \
-    rm -rf /tmp/mmd
+    rm -rf /tmp/mmd && \
+    rm -fr /dst
 
 ADD . /app
 
@@ -47,11 +50,13 @@ RUN pip install -r requirements.txt
 # Default port to expose
 EXPOSE 5000
 
-# Override workdirectory, expected to have persistent storage
+# Override directory, expected to have persistent storage
 VOLUME /dmci
 
-# Override archive directory, expected to have persistent storage
+# Override directory, expected to have persistent storage
 VOLUME /repo
+
+VOLUME /archive
 
 # Catch interrupts and send to all sub-processes
 ENTRYPOINT ["dumb-init", "--"]

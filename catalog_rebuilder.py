@@ -41,11 +41,6 @@ import dmci.distributors.distributor
 from solrindexer.indexdata import IndexMMD
 from requests.auth import HTTPBasicAuth
 
-import asyncio
-from aiohttp import ClientSession
-
-# import dmci
-# from dmci.api.worker import Worker
 from main import CRConfig
 
 """Bootstrapping Catalog-Rebuilder"""
@@ -162,27 +157,9 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.debug("parent list path %s", parentlist_path)
     dmci.config = CONFIG
 
-    """Initialize xsdobj"""
-    # Create the XML Validator Object
-    # xsd_obj = None
-    # try:
-    #     xsd_obj = etree.XMLSchema(
-    #         etree.parse(CONFIG.mmd_xsd_path))
-    # except Exception as e:
-    #     logger.critical("XML Schema could not be parsed: %s" %
-    #                     str(CONFIG.mmd_xsd_path))
-    #     logger.critical(str(e))
-    #     sys.exit(1)
-
-    """Catalog rebuilder catalog task."""
-    # dmci_url = os.environ.get('DMCI_REBUILDER_URL', None)
-    # if dmci_url is None:
-    #     dmci_url = "http://localhost:5000"
-    # logger.info("DMCI rebuilder url is %s" % dmci_url)
-
     self.update_state(state='PENDING',
                       meta={'current': 0, 'total': 1,
-                            'status': 'Cloning MMD repo. And reading filenames.'})
+                            'status': 'Cloning MMD repo, and reading filenames.'})
     cloneRepo()
     # index_archive = os.environ.get("INDEX_ARCHIVE", None)
     # if index_archive is not None:
@@ -235,29 +212,9 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     for parent in parent_mmds:
         fileList.remove(parent)
 
-    # for (file, parent_mmd) in concurrently(fn=loadFile, inputs=parent_mmds):
-    #     logger.debug("Processing parent file: %s", file)
-    #     status, msg = dmci_dist_ingest(parent_mmd, file, action, call_distributors, xsd_obj)
-    #     current += 1
-    #     self.update_state(state='PROGRESS',
-    #                       meta={'current': current, 'total': total,
-    #                             'status': 'Processing parents'})
-    #     if status is False:
-    #         logger.error(
-    #             "Could not ingest parent mmd file %s. Reason: %s", file, msg)
-    #     fileList.remove(file)
-
-    # logger.debug("Processed %d parents", current)
-    # sleep(5)
-    # """Then we ingest all the rest"""
-    # # mystep = 1
-    # # for i in range(0, len(fileList), mystep):
-    # #    mylist = fileList[i:i+mystep]
-    # # mmdList = list()
     self.update_state(state='PROGRESS',
                       meta={'current': current, 'total': total,
                             'status': 'Processing MMD files'})
-    # Futures.ALL_COMPLETED
 
     """Then we ingest all other datasets"""
     mmdJob = group(dmci_dist_ingest_task.s(file, action, call_distributors)
@@ -270,43 +227,6 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                                 'status': 'Processing MMD files'})
 
     current = mmdJob.completed_count() + pcount
-
-    # for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
-    #     # mmdList.append(mmd)
-    #     # status, msg = dmci_ingest(dmci_url, mmd, action)
-    #     logger.debug("Processing MMD file: %s", file)
-    #     status, msg = dmci_dist_ingest(mmd, file, action, call_distributors, xsd_obj)
-    #     if status is False:
-    #         logger.error("Could not prccess file %s. Reason: %s", file, msg)
-    #         # current += 1
-    #     current += 1
-    #     self.update_state(state='PROGRESS',
-    #                       meta={'current': current, 'total': total,
-    #                             'status': 'Processing MMD files'})
-
-    # Futures.ALL_COMPLETED
-    # ASYNC IO TEST NOT WORKING=??
-    # loop = asyncio.get_event_loop()
-    # future = asyncio.ensure_future(ingest_async(loop, mmdList, action, dmci_url))
-    # loop.run_until_complete(future)
-    # responses = future.result()
-    # logger.debug(type(responses))
-    # logger.debug(responses)
-
-    # Normal test
-
-    # Handle the responses from async, and log
-    # if status != 200:
-    #    logger.error("Could not ingest mmd file %s. Reason: %s", file, msg)
-
-    """
-    TODO: Add check here after ingestion is finished to check
-    if we have the same number of records as input files.
-    """
-    # num_files = len(fileList)
-    # pycsw_url = os.getenv('PYCSW_URL')
-    # solr_url = os.getenv('SOLR_URL')
-    # check_integrety(num_files,pycsw_url,solr_url)
 
     # End time taking.
     et = time.perf_counter()
@@ -435,20 +355,6 @@ def loadFile(filename):
                          (filename, e))
             return None
         return xmlfile.encode()
-
-
-def check_integrety(num_files, dmci_status_endpoint):
-    """
-    Function to check that both pycsw and solr have the
-    equal amount of records as the input files read from
-    the mmd repository archive.
-
-    Will use the dmci status endpoint for testing this.
-
-    A sys.exit(1) with an error should be sendt if not match
-    A sys.exit(0) with an success log message if match
-    """
-    raise NotImplementedError
 
 
 @app.task()
@@ -593,43 +499,6 @@ def dmci_ingest(dmci_url, mmd, action):
                      url, e)
 
     return response.status_code, response.text
-
-
-async def dmci_ingest_async(session, dmci_url, mmd, action):
-    """
-    Given url + endpoint for dmci instance,
-    insert the given file.
-    """
-    if action == 'insert':
-        url = dmci_url + '/v1/insert'
-
-    elif action == 'update':
-        url = dmci_url + '/v1/update'
-
-    else:
-        url = dmci_url + '/v1/insert'
-
-    try:
-        # response = requests.post(url, data=mmd)
-        async with session.post(url, data=mmd, timeout=10) as response:
-            response = await response.read()
-    except Exception as e:
-        logger.error("An error occured when ingesting to DMCI rebuilder  %s. Reason: %s",
-                     url, e)
-    else:
-        return response
-
-    return
-
-
-async def ingest_async(loop, mmdlist, action, dmci_url):
-    tasks = []
-    async with ClientSession() as session:
-        for mmd in mmdlist:
-            task = asyncio.ensure_future(dmci_ingest_async(session, dmci_url, mmd.encode(), action))
-            tasks.append(task)
-        responses = await asyncio.gather(*tasks)
-    return responses
 
 
 def main(archive_path, dmci_url, parent_uuid_list):

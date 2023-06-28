@@ -18,7 +18,7 @@ customization:
   env_string: dev
 
 file:
-  file_archive_path: /dmci/archive
+  file_archive_path: /archive
 
 solr:
   solr_service_url: null
@@ -29,7 +29,7 @@ catalog-rebuilder:
   csw_postgis_host: null
   csw_postgis_user: $PG_CSW_USERNAME
   csw_postgis_password: $PG_CSW_PASSWORD
-  mmd_repo_path: /repo
+  mmd_repo_path: /repo/mmd
   mmd_repo_url: $INIT_REPO_URL
   mmd_repo_user: $INIT_REPO_USER
   mmd_repo_password: $INIT_REPO_PASSWORD

@@ -116,6 +116,7 @@ def create_app():
     browsepyApp.config.update(APPLICATION_ROOT='/browsepy',
                               directory_base=CONFIG.browsepy_base_dir,
                               directory_remove=None,
+                              directory_downloadable=True,
                               )
     # initialize()
     rebuilderApp = AdminApp()
