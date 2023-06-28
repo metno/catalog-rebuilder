@@ -37,7 +37,7 @@ from main import CONFIG, jobdata
 
 """TODO: Read from config/kubernets. Create new secrets or reuse solr secrets?"""
 users = {
-    "admin": generate_password_hash("test"),
+    "admin": generate_password_hash(CONFIG.solr_password),
 }
 
 logger = logging.getLogger(__name__)
