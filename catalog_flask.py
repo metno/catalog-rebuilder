@@ -31,8 +31,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from requests.auth import HTTPBasicAuth as BasicAuth
 from solrindexer import IndexMMD
 
-from main import CONFIG
+from celery.result import GroupResult
 
+from main import CONFIG, jobdata
+
+"""TODO: Read from config/kubernets. Create new secrets or reuse solr secrets?"""
 users = {
     "admin": generate_password_hash("test"),
 }
@@ -82,10 +85,11 @@ class AdminApp(Flask):
         logger.debug(os.path.abspath(os.path.dirname(__file__)))
 
         """Read CSW CONFIG """
-        self.csw_username = os.environ.get("PG_CSW_USERNAME", None)
-        self.csw_password = os.environ.get("PG_CSW_PASSWORD", None)
+        self.csw_username = os.environ.get("PG_CSW_USERNAME", CONFIG.csw_postgis_user)
+        self.csw_password = os.environ.get("PG_CSW_PASSWORD", CONFIG.csw_postgis_password)
         # db_url = "postgis-operator"
-        db_url = os.environ.get("PG_CSW_DB_URL", None)
+        db_url = os.environ.get("PG_CSW_DB_URL", CONFIG.csw_postgis_host)
+        logger.info("Connectiong to pycsw postgis: %s", db_url)
         self.csw_connection = psycopg2.connect(host=db_url,
                                                user=self.csw_username,
                                                password=self.csw_password,
@@ -97,11 +101,8 @@ class AdminApp(Flask):
             auth = BasicAuth(self._conf.solr_username, self._conf.solr_password)
         else:
             auth = None
+        logger.info("Connecting to SolR: %s", self._conf.solr_service_url)
         self.mysolr = IndexMMD(self._conf.solr_service_url, authentication=auth)
-
-        self.current_task_id = None  # current task id
-        self.task = None  # current running task object
-        self.prev_task_status = None  # Keep track of previous task
 
         # Very password
         @self.auth.verify_password
@@ -138,19 +139,25 @@ class AdminApp(Flask):
         def admin():
             """Simple form with buttons to manage rejected files and rebuild catalog.
             Form will have buttons that execute the below POST endpoints"""
+
+            """Global job result dict"""
+
+            """Get DMCI info"""
             archive_files = _get_archive_files_count()
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
-            """ Get CSW records"""
+
+            """ Get CSW records and SolR docs"""
             csw_records = csw_getCount(self.csw_connection)
             solr_docs, solr_current = _get_solr_count()
 
-            if self.task is not None:
-                logger.debug(self.task.state)
-                if self.task.state == 'FAILURE' or self.task.state == 'SUCCESS':
-                    self.prev_task_status = str(self.task.state) + " : " + str(self.task.info)
-                    self.task = None
-                    self.current_task_id = None
+            if jobdata['current_task_id'] is not None:
+                task = rebuild_task.AsyncResult(jobdata['current_task_id'])
+                logger.debug(task.state)
+                if task.state == 'FAILURE' or task.state == 'SUCCESS':
+                    jobdata['previous_task_status'] = str(task.state)
+                    jobdata['previous_task_status'] += " : " + str(task.info)
+                    # jobdata['current_task_id'] = None
 
             return render_template("admin.html",
                                    archive_files=archive_files,
@@ -159,8 +166,8 @@ class AdminApp(Flask):
                                    solr_current=solr_current,
                                    rejected_files=rejected_files,
                                    workdir_files=workdir_files,
-                                   current_task=self.current_task_id,
-                                   prev_task_status=self.prev_task_status,
+                                   current_task=jobdata['current_task_id'],
+                                   prev_task_status=jobdata['previous_task_status'],
                                    )
 
         # POST Clean rejected folder
@@ -205,11 +212,6 @@ class AdminApp(Flask):
                 if '/admin' in referrer:
                     return redirect(url_for('admin'))
 
-            if status is True:
-                return {"message": "OK"}, 200
-            if status is False:
-                return {"message": msg}, 500
-
         # POST Rebuild catalog.
         @self.route("/rebuild", methods=["POST"])
         @self.auth.login_required
@@ -229,8 +231,7 @@ class AdminApp(Flask):
                 task = rebuild_task.apply_async([dmci_action,
                                                  self._conf.path_to_parent_list,
                                                  distributors])
-                self.current_task_id = task.id
-                self.task = task
+                jobdata['current_task_id'] = task.id
 
                 return jsonify({}), 202, {'Location': url_for('rebuild_taskstatus',
                                           task_id=task.id)}
@@ -244,17 +245,55 @@ class AdminApp(Flask):
         @self.auth.login_required
         def cancel_rebuild():
             response = {'state': 'REVOKED',
-                        'current': 1,
-                        'total': 1,
+                        'current': jobdata['current'],
+                        'total': jobdata['total'],
                         'status': 'Manually canceled',  # this is the exception raised
                         }
-            if self.task is not None:
-                self.task.revoke(terminate=True)
-                self.prev_task_status = "Revoked" + " : " + "Manually canceled."
-                self.task = None
-                self.current_task_id = None
+            if jobdata['current_task_id'] is not None:
+                task = rebuild_task.AsyncResult(jobdata['current_task_id'])
+                logger.debug(task.state)
+                for ingest_task in task.children:
+                    ingest_task.revoke(terminate=True)
+
+                task.revoke(terminate=True)
+                jobdata['previous_task_status'] = "Revoked" + " : " + "Manually canceled."
+                jobdata['current_task_id'] = None
 
             return jsonify(response)
+
+        @self.route('/rebuild/result')
+        def rebuild_result():
+            if jobdata['current_task_id'] is not None:
+                result_dict = dict()
+                task = rebuild_task.AsyncResult(jobdata['current_task_id'])
+                logger.debug(task.state)
+                if task.successful():
+                    # logger.debug(task.children)
+                    for ingest_task in task.children:
+                        if isinstance(ingest_task, list):
+                            for t in ingest_task:
+                                logger.debug(t.name)
+                                logger.debug(t.args)
+
+                        if isinstance(ingest_task, GroupResult):
+                            for t in ingest_task.children:
+                                logger.debug(t.get())
+                                status, file, msg = t.get()
+                                if status is False:
+                                    result_dict[file] = msg
+                                    # file = msg.split('XZZZX')[0]
+                                    # reason = msg.split('XZZZX')[1]
+                                    # result_dict[file] = reason
+                    if len(result_dict) == 0:
+                        return {"message": "State: {0}".format(task.state),
+                                "Result": "All files sucessfully added"}
+                    else:
+                        return {"message": "State: FINISHED",
+                                "Failed status": result_dict}, 200
+                else:
+                    {{"message": "Rebuild job is still running"}}
+            else:
+                return {"message": "State: No rebuild job running"}
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
@@ -271,6 +310,16 @@ class AdminApp(Flask):
                     'status': task.info.get('status', '')
 
                 }
+            elif task.state == 'SUCCESS':
+                response = {
+                    'state': task.state,
+                    'current': task.info.get('total', 0),
+                    'total': task.info.get('total', 1),
+                    'status': task.info.get('status', '')
+
+                }
+                if 'result' in task.info:
+                    response['result'] = task.info['result']
             elif task.state != 'FAILURE':
                 response = {
                     'state': task.state,

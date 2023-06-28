@@ -1,30 +1,51 @@
-# catalog-rebuilder
+# S-ENDA Catalog rebuilder
 
-Catalog rebuilder of CSW and Solr for the S-ENDA project
+Catalog rebuilder of CSW and Solr for the S-ENDA project.
+
+## Design
+
+The catalog-rebuilder consists of three modules.
+
+* `main.py`- Main entrypoint for starting the Flask app
+* `catalog_flask.py` - A Flask app for getting catalog status and rebuilding the catalog
+* `catalog_rebuilder.py`- The rebuilding code, which is run as a Celery worker process. Imports
+the DMCI package and use the DMCI worker for the processing.
+
+The catalog-rebuilder will also need a `Redis`-server running.
+
 
 ![Catalog rebuilder component diagram](rebuilder-component-diagram.png)
 
 ## Environment Variables
 
-The package reads the following environment variables.
+The package bootstraps the DMCI module, so all environment variables and a
+extended version of  the DMCI config file are required. See `config_default.yaml`for an example.
 
-* `CATALOG_REBUILDER_ENABLED` If `true` or `True` the catalog will be rebuilt. If not set or other values, rebuilding will not execute.
-* `MMD_ARCHIVE_PATH` the local path to look for the **mmd-archive**.
-* `DMCI_REBUILDER_URL` the url for the custom rebuilder instance of DMCI.
-* `PARENT_UUID_LIST`the full path to the parent-uuid-list.xml. If not provided,
-it will look for the file in /parent-uuid-list.xml
-* `DEBUG` set this to other than blank to enable debugging
+The package reads the following additional environment variables.
+
+* `CATALOG_REBUILDER_LOGLEVEL` set the loglevel for both flask app and celery app
 * `DMCI_CONFIG` the dmci config
 * `PG_CSW_USERNAME` the pycsw postgresql username
 * `PG_CSW_PASSWORD` the pycsw postgresql password
 * `SOLR_USERNAME` the solr username
 * `SOLR_PASSWORD` the solr password
+* `INIT_REPO_URL` the url for the repo to rebuild from
+* `INIT_REPO_USER` user credentials for the repo
+* `INIT_REPO_PASSWORD` password credentials for the repo
 
 
-## DMCI Sidecar
+## Flask app endpoints
 
-The catalog-rebuilder will use its own dmci sidecar for ingestion. The DMCI can then be tailored for which distributors
-and enpoints (SolR, pycsw) to use for the ingestion.
+* `/status` - Show Catalog Integrity Status
+* `/admin` - Admin endpoint for cleaning the backends and rebuilding the catalog
+* `/rebuild/result`- This endpoint will give back a JSON-object with the result of the ingestion
+* `/dmci/rejected` - Inspect the contents of the DMCI rejected jobs
+* `/dmci/workdir` - Inspect the distributor cache workdir
+
+## Celery Worker Sidecar
+
+The catalog-rebuilder will use its own Celery worker process in a sidecar, and process using
+DMCI worker object.
 
 ## License
 

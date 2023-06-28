@@ -23,7 +23,6 @@ import requests
 import os
 import fnmatch
 import sys
-import shutil
 import time
 from lxml import etree
 from pathlib import Path
@@ -31,13 +30,10 @@ from time import sleep
 import logging
 from celery import Celery
 from itertools import islice
-from celery import TaskSet, task
-
+from celery import group
 import dmci
 from dmci.api.worker import Worker as DmciWorker
 from dmci.api.app import App
-from dmci.config import Config
-from dmci.distributors.distributor import Distributor as DmciDist
 
 from dmci.distributors import SolRDist, PyCSWDist
 
@@ -50,31 +46,35 @@ from aiohttp import ClientSession
 
 # import dmci
 # from dmci.api.worker import Worker
-# from main import CONFIG
+from main import CRConfig
 
-CONFIG = Config()
+"""Bootstrapping Catalog-Rebuilder"""
+
+"""Read the DMCI config object"""
+os.curdir = os.path.abspath(os.path.dirname(__file__))
+CONFIG = CRConfig()
 if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
     sys.exit(1)
 
-dmci.CONFIG = CONFIG
+"""Overrid DMCI package config"""
+dmci.CONFIG = CONFIG  # Not sure if this works
 
+
+"""Initialize logging"""
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:{lineno:<4d} {levelname:8s} {message:}',
                               style="{")
-
-INDEX_ARCHIVE = '/home/magnarem/tmp/mmd-xml-dev/'
 
 stream_handler = logging.StreamHandler()
 stream_handler.setLevel(logging.DEBUG)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 logging.getLogger('solrindexer').setLevel(logging.WARNING)
-# logging.getLogger('dmci').setLevel(logging.DEBUG)
-
+logging.getLogger('dmci').setLevel(logging.DEBUG)
 # logging.getLogger('pysolr').setLevel(logging.INFO)
 
+"""Initialize Solr Connection object"""
 authentication = None
 if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
     authentication = HTTPBasicAuth(CONFIG.solr_username,
@@ -83,37 +83,23 @@ indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
                     authentication=authentication)
 
 
-class Distributor(DmciDist):
-    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
-        logger.debug("I am custom distributor")
-        super().__init__(cmd, xml_file=None, metadata_id=None, worker=None, **kwargs)
-
-        self._conf = CONFIG
-        dmci.CONFIG = CONFIG
-
-        return
-
-
-dmci.distributors.distributor.Distributor = Distributor
-
-
 class CRPyCSWMDist(PyCSWDist):
+    """Override PyCSwDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
         super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
-        logger.debug("I am custom pycsw  dist class")
         self._conf = CONFIG
         return
 
 
 class CRSolrDist(SolRDist):
+    """Override SolRDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
         super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
-        logger.debug("I am custom solr dist class")
         self._conf = CONFIG
-        self._conf.fail_on_missing_parent = False
+        # self._conf.fail_on_missing_parent = False
         self.authentication = self._init_authentication()
 
-        #  Create connection to solr
+        #  Use the initiilized solr connection
         self.mysolr = indexMMD
         self.mysolr.solr_url = self._conf.solr_service_url
         logger.debug(self._conf.solr_service_url)
@@ -121,7 +107,7 @@ class CRSolrDist(SolRDist):
 
 
 class Worker(DmciWorker):
-
+    """Ovverride the DMCI Worker with the inherited distributors"""
     CALL_MAP = {
         "pycsw": CRPyCSWMDist,
         "solr": CRSolrDist
@@ -130,7 +116,7 @@ class Worker(DmciWorker):
     def __init__(self, cmd, xml_file, xsd_validator, dist_call, **kwargs):
         super().__init__(cmd, xml_file, xsd_validator, **kwargs)
         self._conf = CONFIG
-        self._conf.call_distributors = dist_call
+        self._conf.call_distributors = dist_call  # Use given dist call list from flask
         dmci.CONFIG = CONFIG
         logger.debug("command:  %s", self._dist_cmd)
         logger.debug("dists:  %s", self._conf.call_distributors)
@@ -141,10 +127,12 @@ class Worker(DmciWorker):
         return
 
 
+"""Initialize Celery"""
+redis_broker = str(CONFIG.redis_broker) + '/0'
 app = Celery('rebuilder',
-             broker='redis://localhost:6379/0')
-app.conf.update(broker_url='redis://localhost:6379/',
-                result_backend='redis://localhost:6379/',
+             broker=redis_broker)
+app.conf.update(broker_url=CONFIG.redis_broker,
+                result_backend=CONFIG.redis_broker,
                 task_serializer='json',
                 accept_content=['json'],  # Ignore other content
                 result_serializer='json',
@@ -154,41 +142,57 @@ app.conf.update(broker_url='redis://localhost:6379/',
                 )
 
 
+"""Initialize global xsd_obj used by dmci distributors"""
+XSD_OBJ = None
+try:
+    XSD_OBJ = etree.XMLSchema(
+        etree.parse(CONFIG.mmd_xsd_path))
+except Exception as e:
+    logger.critical("XML Schema could not be parsed: %s" %
+                    str(CONFIG.mmd_xsd_path))
+    logger.critical(str(e))
+    sys.exit(1)
+
+
 @app.task(bind=True)
 def rebuild_task(self, action, parentlist_path, call_distributors):
+    """Main Celery Catalog-rebuilder task"""
     logger.info("Requested task %s", self.request.id)
     logger.debug("Call distributors: %s", call_distributors)
     logger.debug("parent list path %s", parentlist_path)
     dmci.config = CONFIG
-    dmci.distributors.distributor.Distributor = Distributor
 
     """Initialize xsdobj"""
     # Create the XML Validator Object
-    xsd_obj = None
-    try:
-        xsd_obj = etree.XMLSchema(
-            etree.parse(CONFIG.mmd_xsd_path))
-    except Exception as e:
-        logger.critical("XML Schema could not be parsed: %s" %
-                        str(CONFIG.mmd_xsd_path))
-        logger.critical(str(e))
-        sys.exit(1)
+    # xsd_obj = None
+    # try:
+    #     xsd_obj = etree.XMLSchema(
+    #         etree.parse(CONFIG.mmd_xsd_path))
+    # except Exception as e:
+    #     logger.critical("XML Schema could not be parsed: %s" %
+    #                     str(CONFIG.mmd_xsd_path))
+    #     logger.critical(str(e))
+    #     sys.exit(1)
 
     """Catalog rebuilder catalog task."""
-    dmci_url = os.environ.get('DMCI_REBUILDER_URL', None)
-    if dmci_url is None:
-        dmci_url = "http://localhost:5000"
-    logger.info("DMCI rebuilder url is %s" % dmci_url)
+    # dmci_url = os.environ.get('DMCI_REBUILDER_URL', None)
+    # if dmci_url is None:
+    #     dmci_url = "http://localhost:5000"
+    # logger.info("DMCI rebuilder url is %s" % dmci_url)
 
     self.update_state(state='PENDING',
                       meta={'current': 0, 'total': 1, 'status': 'Cloning MMD repo.'})
-    # cloneRepo()
+    cloneRepo()
     # index_archive = os.environ.get("INDEX_ARCHIVE", None)
     # if index_archive is not None:
     #    INDEX_ARCHIVE = index_archive
-    fileList = getListOfFiles(INDEX_ARCHIVE)
+    fileList = getListOfFiles(CONFIG.mmd_repo_path)
+
+    """Keep track of ingest tasks and status"""
     total = len(fileList)
     current = 0
+    # failed = 0
+
     self.update_state(state='PROGRESS',
                       meta={'current': current, 'total': total, 'status': 'Preparing parents'})
 
@@ -211,47 +215,75 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.info("Sleeping for one minute to make sure sidecar is running.")
 
     logger.info("Starting catalog rebuilding....")
-    sleep(5)
+
     """First we ingest the parents."""
-
-    for (file, parent_mmd) in concurrently(fn=loadFile, inputs=parent_mmds):
-        logger.debug("Processing parent file: %s", file)
-        status, msg = dmci_dist_ingest(parent_mmd, file, action, call_distributors, xsd_obj)
-        current += 1
+    parentJob = group(dmci_dist_ingest_task.s(file, action,
+                                              call_distributors)
+                      for file in parent_mmds)()
+    self.parentJob = parentJob
+    pcount = 0
+    while parentJob.waiting():
+        pcount = parentJob.completed_count()
         self.update_state(state='PROGRESS',
-                          meta={'current': current, 'total': total,
+                          meta={'current': parentJob.completed_count(), 'total': total,
                                 'status': 'Processing parents'})
-        if status is False:
-            logger.error(
-                "Could not ingest parent mmd file %s. Reason: %s", file, msg)
-        fileList.remove(file)
 
-    logger.debug("Processed %d parents", current)
-    sleep(5)
-    """Then we ingest all the rest"""
-    # mystep = 1
-    # for i in range(0, len(fileList), mystep):
-    #    mylist = fileList[i:i+mystep]
-    # mmdList = list()
+    current += pcount
+
+    """Update fileList remove ingested parents"""
+    for parent in parent_mmds:
+        fileList.remove(parent)
+
+    # for (file, parent_mmd) in concurrently(fn=loadFile, inputs=parent_mmds):
+    #     logger.debug("Processing parent file: %s", file)
+    #     status, msg = dmci_dist_ingest(parent_mmd, file, action, call_distributors, xsd_obj)
+    #     current += 1
+    #     self.update_state(state='PROGRESS',
+    #                       meta={'current': current, 'total': total,
+    #                             'status': 'Processing parents'})
+    #     if status is False:
+    #         logger.error(
+    #             "Could not ingest parent mmd file %s. Reason: %s", file, msg)
+    #     fileList.remove(file)
+
+    # logger.debug("Processed %d parents", current)
+    # sleep(5)
+    # """Then we ingest all the rest"""
+    # # mystep = 1
+    # # for i in range(0, len(fileList), mystep):
+    # #    mylist = fileList[i:i+mystep]
+    # # mmdList = list()
     self.update_state(state='PROGRESS',
                       meta={'current': current, 'total': total,
                             'status': 'Processing MMD files'})
-    Futures.ALL_COMPLETED
+    # Futures.ALL_COMPLETED
 
-    for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
-        # mmdList.append(mmd)
-        # status, msg = dmci_ingest(dmci_url, mmd, action)
-        logger.debug("Processing MMD file: %s", file)
-        status, msg = dmci_dist_ingest(mmd, file, action, call_distributors, xsd_obj)
-        if status is False:
-            logger.error("Could not prccess file %s. Reason: %s", file, msg)
-            # current += 1
-        current += 1
+    """Then we ingest all other datasets"""
+    mmdJob = group(dmci_dist_ingest_task.s(file, action, call_distributors)
+                   for file in fileList)()
+    self.mmdJob = mmdJob
+    while mmdJob.waiting():
+        current = mmdJob.completed_count() + pcount
         self.update_state(state='PROGRESS',
                           meta={'current': current, 'total': total,
                                 'status': 'Processing MMD files'})
 
-    Futures.ALL_COMPLETED
+    current = mmdJob.completed_count() + pcount
+
+    # for (file, mmd) in concurrently(fn=loadFile, inputs=fileList):
+    #     # mmdList.append(mmd)
+    #     # status, msg = dmci_ingest(dmci_url, mmd, action)
+    #     logger.debug("Processing MMD file: %s", file)
+    #     status, msg = dmci_dist_ingest(mmd, file, action, call_distributors, xsd_obj)
+    #     if status is False:
+    #         logger.error("Could not prccess file %s. Reason: %s", file, msg)
+    #         # current += 1
+    #     current += 1
+    #     self.update_state(state='PROGRESS',
+    #                       meta={'current': current, 'total': total,
+    #                             'status': 'Processing MMD files'})
+
+    # Futures.ALL_COMPLETED
     # ASYNC IO TEST NOT WORKING=??
     # loop = asyncio.get_event_loop()
     # future = asyncio.ensure_future(ingest_async(loop, mmdList, action, dmci_url))
@@ -299,16 +331,16 @@ def processFile(file):
 
 
 def cloneRepo():
-    """ Updates the repo"""
-    if os.path.exists(INDEX_ARCHIVE):
-        shutil.rmtree(INDEX_ARCHIVE)
-    destination_path = INDEX_ARCHIVE
-    clone_command = "git clone https://k8s-dmci-dev:dQyq95s3zs3VrpRLLVxm@gitlab.met.no/mmd/mmd-xml-dev.git"
-
-    clone_with_path = clone_command + " " + destination_path
-    os.system(clone_with_path)
-
-# Function for concerrntly process list of inputs using multithreading
+    """ Updates the MMD_REPO. """
+    mmd_repo = CONFIG.mmd_repo_url
+    destination_path = CONFIG.mmd_repo_path
+    if not os.path.exists(destination_path):
+        clone_command = "git clone " + mmd_repo + " " + destination_path
+    else:
+        pushd_command = "cd " + destination_path + '; '
+        clone_command = pushd_command + "git pull origin master"
+        logger.debug(clone_command)
+    os.system(clone_command)
 
 
 def concurrently(fn, inputs, *, max_concurrency=5):
@@ -419,6 +451,67 @@ def check_integrety(num_files, dmci_status_endpoint):
 
 
 @app.task()
+def dmci_dist_ingest_task(mmd_path, action, call_distributors):
+    """Celery task ingesting one mmd file"""
+    data = loadFile(mmd_path)
+    status = False
+    worker = Worker(action, mmd_path, XSD_OBJ, call_distributors,
+                    path_to_parent_list=CONFIG.path_to_parent_list,
+                    md_namespace=CONFIG.env_string)
+    valid, msg, data_ = worker.validate(data)
+    if not data == data_:
+        msg, code = App._persist_file(data_, mmd_path)
+    if valid is True:
+        status = True
+        valid = True
+        called = []
+        failed = []
+        skipped = []
+        failed_msg = []
+        failed_dict = dict()
+        ok_dict = dict()
+
+        for dist in call_distributors:
+            if dist not in worker.CALL_MAP:
+                continue
+            obj = worker.CALL_MAP[dist](
+                worker._dist_cmd,
+                xml_file=mmd_path,
+                metadata_id=worker._dist_metadata_id,
+                worker=worker,
+                path_to_parent_list=CONFIG.path_to_parent_list
+            )
+            obj._conf = CONFIG
+            valid &= obj.is_valid()
+            if obj.is_valid():
+                obj._conf = CONFIG
+                obj_status, obj_msg = obj.run()
+                status &= obj_status
+                if obj_status:
+                    called.append(dist)
+                    ok_dict[dist] = obj_msg
+                else:
+                    failed.append(dist)
+                    failed_msg.append(msg)
+                    failed_dict[dist] = obj_msg
+            else:
+                skipped.append(dist)
+        if len(failed) > 0:
+            # msg = '\n'.join([msg for msg in failed_msg])
+            msg = failed_dict
+            status = False
+        else:
+            status = True
+            msg = '\n'.join([msg for msg in called])
+
+    else:
+        logger.error("XML Validation failed for file: %s . Reason: %s", mmd_path, msg)
+
+    # logger.debug("Woreker result: %s", failed_dict)
+
+    return (status, mmd_path, msg)
+
+
 def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
     """Using the distributors directly ingesting"""
     status = False
@@ -461,7 +554,7 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
             else:
                 skipped.append(dist)
         if len(failed) > 0:
-            msg = '\n'.join([msg for msg in failed_msg])
+            msg = mmd_path + ': ' + '\n'.join([msg for msg in failed_msg])
             status = False
         else:
             status = True
@@ -470,7 +563,7 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
     else:
         logger.error("File %s failed validation. Reason: %s", mmd_path, msg)
 
-    return status, msg
+    return (status, msg)
 
 
 def dmci_ingest(dmci_url, mmd, action):
