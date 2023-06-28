@@ -181,7 +181,8 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     # logger.info("DMCI rebuilder url is %s" % dmci_url)
 
     self.update_state(state='PENDING',
-                      meta={'current': 0, 'total': 1, 'status': 'Cloning MMD repo.'})
+                      meta={'current': 0, 'total': 1,
+                            'status': 'Cloning MMD repo. And reading filenames.'})
     cloneRepo()
     # index_archive = os.environ.get("INDEX_ARCHIVE", None)
     # if index_archive is not None:

@@ -21,8 +21,9 @@ import sys
 import logging
 import psycopg2
 
-from catalog_rebuilder import rebuild_task, getListOfFiles
-from catalog_tools import csw_getCount, rejected_delete, csw_truncateRecords, get_xml_file_count
+from catalog_rebuilder import rebuild_task, getListOfFiles, app
+from catalog_tools import csw_getCount, rejected_delete, get_solrstatus
+from catalog_tools import csw_truncateRecords, get_xml_file_count
 
 
 from flask import Flask, render_template, request, url_for, redirect, jsonify
@@ -31,15 +32,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from requests.auth import HTTPBasicAuth as BasicAuth
 from solrindexer import IndexMMD
 
-from celery.result import GroupResult
+from celery.result import GroupResult, ResultBase
 
 from main import CONFIG, jobdata
 
-"""TODO: Read from config/kubernets. Create new secrets or reuse solr secrets?"""
-users = {
-    "admin": generate_password_hash(CONFIG.solr_password),
-}
-
+"""Initialize logging"""
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -95,20 +92,25 @@ class AdminApp(Flask):
                                                password=self.csw_password,
                                                dbname='csw_db', port=5432)
         self.csw_connection.autocommit = True
-
+        self.solr_auth = None
         """Solr connection"""
         if self._conf.solr_username is not None and self._conf.solr_password is not None:
-            auth = BasicAuth(self._conf.solr_username, self._conf.solr_password)
-        else:
-            auth = None
+            self.solr_auth = BasicAuth(self._conf.solr_username, self._conf.solr_password)
         logger.info("Connecting to SolR: %s", self._conf.solr_service_url)
-        self.mysolr = IndexMMD(self._conf.solr_service_url, authentication=auth)
+        self.mysolr = IndexMMD(self._conf.solr_service_url, authentication=self.solr_auth)
+
+        """Flask admin credentials"""
+        """TODO: Read from config/kubernets. Create new secrets or reuse solr secrets?"""
+        # logger.debug(self._conf.solr_password)
+        self.users = {
+            "admin": generate_password_hash(self._conf.solr_password),
+        }
 
         # Very password
         @self.auth.verify_password
         def verify_password(username, password):
-            if username in users and \
-                    check_password_hash(users.get(username), password):
+            if username in self.users and \
+                    check_password_hash(self.users.get(username), password):
                 return username
 
         # Show catalog status
@@ -122,7 +124,8 @@ class AdminApp(Flask):
             """ Get CSW records"""
             csw_records = csw_getCount(self.csw_connection)
 
-            solr_docs, solr_current = _get_solr_count()
+            solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
+                                                      self.solr_auth)
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -149,8 +152,8 @@ class AdminApp(Flask):
 
             """ Get CSW records and SolR docs"""
             csw_records = csw_getCount(self.csw_connection)
-            solr_docs, solr_current = _get_solr_count()
-
+            solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
+                                                      self.solr_auth)
             if jobdata['current_task_id'] is not None:
                 task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                 logger.debug(task.state)
@@ -250,11 +253,13 @@ class AdminApp(Flask):
                         'status': 'Manually canceled',  # this is the exception raised
                         }
             if jobdata['current_task_id'] is not None:
+                app.control.purge()
                 task = rebuild_task.AsyncResult(jobdata['current_task_id'])
+                task.revoke(terminate=True)
                 logger.debug(task.state)
-                for ingest_task in task.children:
-                    ingest_task.revoke(terminate=True)
-
+                for ingest_tasks in task.children:
+                    _revoke_tasks(ingest_tasks)
+                #         ingest_task.revoke(terminate=True)
                 task.revoke(terminate=True)
                 jobdata['previous_task_status'] = "Revoked" + " : " + "Manually canceled."
                 jobdata['current_task_id'] = None
@@ -297,11 +302,11 @@ class AdminApp(Flask):
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
-            try:
-                task = rebuild_task.AsyncResult(task_id)
-                logger.debug(task.state)
-            except Exception as e:
-                return jsonify({'status': str(e)})
+            task = rebuild_task.AsyncResult(task_id)
+            if task is None:
+                return jsonify({"Job not running...See logs"})
+            logger.debug(task.state)
+
             if task.state == 'PENDING':
                 response = {
                     'state': task.state,
@@ -310,6 +315,15 @@ class AdminApp(Flask):
                     'status': task.info.get('status', '')
 
                 }
+            elif task.state == 'REVOKED':
+                response = {
+                    'state': task.state,
+                    'current': 0,
+                    'total': 1,
+                    'status': "Manually revoked task"
+
+                }
+
             elif task.state == 'SUCCESS':
                 response = {
                     'state': task.state,
@@ -363,9 +377,22 @@ class AdminApp(Flask):
                 self._conf.distributor_cache)
             return workdir_files
 
-        def _get_solr_count():
+        def _get_solr_count(solr_url, authentication):
             """Get SOLR documents"""
-            solr_status = self.mysolr.get_status()
+            solr_status = get_solrstatus(solr_url, authentication)
             solr_docs = solr_status['numDocs']
             solr_current = solr_status['current']
             return solr_docs, solr_current
+
+        def _revoke_tasks(tasks):
+            """recursive task revoke function"""
+            for task in tasks:
+                if isinstance(task, GroupResult):
+                    task.revoke()
+                elif isinstance(task, ResultBase):
+                    task.revoke()
+                elif isinstance(task, list):
+                    _revoke_tasks(task)
+                else:
+                    pass
+
