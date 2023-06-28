@@ -148,6 +148,10 @@ except Exception as e:
     logger.critical(str(e))
     sys.exit(1)
 
+"""Hack for container warning"""
+githack = 'git config --global --add safe.directory '
+os.system(githack+CONFIG.mmd_repo_path)
+
 
 @app.task(bind=True)
 def rebuild_task(self, action, parentlist_path, call_distributors):

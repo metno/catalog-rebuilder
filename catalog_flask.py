@@ -142,7 +142,6 @@ class AdminApp(Flask):
         def admin():
             """Simple form with buttons to manage rejected files and rebuild catalog.
             Form will have buttons that execute the below POST endpoints"""
-
             """Global job result dict"""
 
             """Get DMCI info"""

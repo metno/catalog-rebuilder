@@ -25,14 +25,14 @@ RUN apt-get -qqy update && \
     && rm -rf /var/lib/apt/lists/* && \
     pip install "gunicorn${GUNICORN_VERSION}"
 
-ARG DST=/dst
+
 # Download MMD and use local copy of schema (see sed command below)
 RUN git config --global advice.detachedHead false
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
-    mkdir -p $DST/usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
-    cp -a /tmp/mmd/xslt/* $DST/usr/share/mmd/xslt && \
-    cp -a /tmp/mmd/xsd/* $DST/usr/share/mmd/xsd && \
-    sed -Ei 's#http\://www.w3.org/2001/(xml.xsd)#\1#g' $DST/usr/share/mmd/xsd/*.xsd && \
+    mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
+    cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
+    cp -a /tmp/mmd/xsd/* /usr/share/mmd/xsd && \
+    sed -Ei 's#http\://www.w3.org/2001/(xml.xsd)#\1#g' /usr/share/mmd/xsd/*.xsd && \
     rm -rf /tmp/mmd && \
     rm -fr /dst
 
@@ -47,7 +47,7 @@ ENV CATALOG_REBUILDER_ENABLED=False
 
 RUN pip install -r requirements.txt
 
-# Default port to expose
+# Default port to
 EXPOSE 5000
 
 # Override directory, expected to have persistent storage
@@ -55,6 +55,7 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
+RUN git config --global --add safe.directory /repo
 
 VOLUME /archive
 
@@ -62,4 +63,4 @@ VOLUME /archive
 ENTRYPOINT ["dumb-init", "--"]
 
 # Start application
-CMD gunicorn --worker-class sync --workers "5" --bind 0.0.0.0:5000 'main:create_app()' --keep-alive "5" --log-level 5000
+CMD gunicorn --worker-class sync --workers "1" --bind 0.0.0.0:5000 'main:create_app()' --keep-alive "1" --log-level DEBUG
