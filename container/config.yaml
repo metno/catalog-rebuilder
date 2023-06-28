@@ -1,0 +1,37 @@
+---
+dmci:
+  distributors:
+    - pycsw
+    - solr
+  distributor_cache: /dmci/workdir
+  rejected_jobs_path: /dmci/rejected
+  max_permitted_size: 100000
+  mmd_xsl_path: /usr/share/mmd/xslt/mmd-to-geonorge.xsl
+  mmd_xsd_path: /usr/share/mmd/xsd/mmd_strict.xsd
+  path_to_parent_list: /parent-uuid-list.xml
+
+pycsw:
+  csw_service_url: null
+
+customization:
+  catalog_url: null
+  env_string: dev
+
+file:
+  file_archive_path: /dmci/archive
+
+solr:
+  solr_service_url: null
+  fail_on_missing_parent: false
+
+
+catalog-rebuilder:
+  csw_postgis_host: null
+  csw_postgis_user: $PG_CSW_USERNAME
+  csw_postgis_password: $PG_CSW_PASSWORD
+  mmd_repo_path: /repo
+  mmd_repo_url: $INIT_REPO_URL
+  mmd_repo_user: $INIT_REPO_USER
+  mmd_repo_password: $INIT_REPO_PASSWORD
+  browsepy_base_dir: /dmci
+  redis_broker: redis://host:port
