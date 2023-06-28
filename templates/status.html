@@ -1,0 +1,56 @@
+<html>
+
+  <head>
+
+    <title>S-ENDA Catalog status</title>
+
+  </head>
+
+  <body>
+
+    <h1>Catalog integrity</h1>
+<table>
+    <tr>
+      <th>Distributor</th>
+      <th>Count</th>
+    </tr>
+<tr>
+<td>Archive files: </td>
+<td> {{ archive_files }}</td>
+</tr>
+<tr>
+<td>CSW Records: </td>
+<td>{{ csw_records }}</td>
+</tr>
+<tr>
+<td>Solr Documents: </td>
+{% if solr_current is sameas true %}
+  <td>{{ solr_docs }}</td>
+{% else %}
+<td><s>{{ solr_docs }}</s></td>
+{% endif %}
+</td>
+</tr>
+</table>
+<span><em>SolR updates every 10 minutes</em></span>
+
+
+<h1>DMCI</h1>
+<table>
+<tr>
+  <td>Rejected files: </td>
+  <td>{{ rejected_files }}</td>
+  </td>
+  </tr>
+  <tr>
+  <td>Distributor cache (workdir): </td>
+  <td>{{ workdir_files }}</td>
+  </td>
+  </tr>
+</table>
+
+
+  </body>
+
+</html>
+

@@ -1,3 +1,14 @@
+metvocab @ git+https://github.com/metno/met-vocab-tools@v1.1
+dmci @ git+https://github.com/metno/discovery-metadata-catalog-ingestor@main
+browsepy @ git+https://github.com/magnarem/browsepy@master
 requests>=2.22
+pyyaml>=5.1
+flask>=1.0
+flask_httpauth
+lxml>=4.2.0
 pathlib
-lxml
+psycopg2-binary
+celery
+flower
+redis
+asyncio
