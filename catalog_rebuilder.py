@@ -1,5 +1,5 @@
 """
-Catalog rebuilder - Flask app
+Catalog rebuilder - Celery Task
 ====================
 
 Copyright 2021 MET Norway
