@@ -295,7 +295,7 @@ class AdminApp(Flask):
                         return {"message": "State: FINISHED",
                                 "Failed status": result_dict}, 200
                 else:
-                    {{"message": "Rebuild job is still running"}}
+                    {"message": "Rebuild job is still running"}
             else:
                 return {"message": "State: No rebuild job running"}
 
