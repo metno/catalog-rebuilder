@@ -286,7 +286,7 @@ class AdminApp(Flask):
             if 'current_task_id' in jobdata and jobdata['current_task_id'] is not None:
                 task_id = jobdata['current_task_id']
                 task = rebuild_task.AsyncResult(task_id)
-                response_obj['current'] = task.info.get('total', 0),
+                response_obj['current'] = task.info.get('current', 0),
                 response_obj['total'] = task.info.get('total', 1),
                 response_obj['status'] = task.info.get('status', '')
                 response_obj['state'] = task.state

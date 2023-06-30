@@ -253,7 +253,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                       )
 
     return {'status': 'Catalog rebuilding completed in {0}'.format(job_time),
-            'current': current+1, 'total': total}
+            'current': current, 'total': total}
 
 
 def processFile(file):
