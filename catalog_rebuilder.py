@@ -40,6 +40,7 @@ from dmci.distributors import SolRDist, PyCSWDist
 import dmci.distributors.distributor
 from solrindexer.indexdata import IndexMMD
 from requests.auth import HTTPBasicAuth
+from celery.utils.log import get_task_logger
 
 from main import CRConfig
 
@@ -56,15 +57,16 @@ dmci.CONFIG = CONFIG  # Not sure if this works
 
 
 """Initialize logging"""
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:{lineno:<4d} {levelname:8s} {message:}',
-                              style="{")
+logger = get_task_logger(__name__)
+# logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
+# formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:
+#                               {lineno:<4d} {levelname:8s} {message:}', style="{")
 
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.DEBUG)
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
+# stream_handler = logging.StreamHandler()
+# stream_handler.setLevel(logging.DEBUG)
+# stream_handler.setFormatter(formatter)
+# logger.addHandler(stream_handler)
 logging.getLogger('solrindexer').setLevel(logging.WARNING)
 logging.getLogger('dmci').setLevel(logging.DEBUG)
 # logging.getLogger('pysolr').setLevel(logging.INFO)
@@ -153,7 +155,7 @@ githack = 'git config --global --add safe.directory '
 os.system(githack+CONFIG.mmd_repo_path)
 
 
-@app.task(bind=True)
+@app.task(bind=True, trail=True)
 def rebuild_task(self, action, parentlist_path, call_distributors):
     """Main Celery Catalog-rebuilder task"""
     logger.info("Requested task %s", self.request.id)
@@ -203,12 +205,14 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                                               call_distributors)
                       for file in parent_mmds)()
     self.parentJob = parentJob
+
     pcount = 0
     while parentJob.waiting():
         pcount = parentJob.completed_count()
         self.update_state(state='PROGRESS',
                           meta={'current': parentJob.completed_count(), 'total': total,
-                                'status': 'Processing parents'})
+                                'status': 'Processing parents',
+                                'parent_job_id': parentJob.id})
 
     current += pcount
 
@@ -228,7 +232,9 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
         current = mmdJob.completed_count() + pcount
         self.update_state(state='PROGRESS',
                           meta={'current': current, 'total': total,
-                                'status': 'Processing MMD files'})
+                                'status': 'Processing MMD files',
+                                'parent_job_id': parentJob.id,
+                                'mmd_job_id': mmdJob.id})
 
     current = mmdJob.completed_count() + pcount
 
@@ -247,7 +253,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                       )
 
     return {'status': 'Catalog rebuilding completed in {0}'.format(job_time),
-            'current': current, 'total': total}
+            'current': current+1, 'total': total}
 
 
 def processFile(file):
@@ -361,7 +367,7 @@ def loadFile(filename):
         return xmlfile.encode()
 
 
-@app.task()
+@app.task(trail=True)
 def dmci_dist_ingest_task(mmd_path, action, call_distributors):
     """Celery task ingesting one mmd file"""
     data = loadFile(mmd_path)
@@ -600,11 +606,11 @@ if __name__ == "__main__":
     if os.getenv('DEBUG') is not None:
         logger.info("Setting loglevel to DEBUG")
         logger.setLevel(logging.DEBUG)
-        stream_handler.setLevel(logging.DEBUG)
+        # stream_handler.setLevel(logging.DEBUG)
     else:
         logger.info("Log level is INFO")
         logger.setLevel(logging.INFO)
-        stream_handler.setLevel(logging.INFO)
+        # stream_handler.setLevel(logging.INFO)
     if archive_path is None:
         logger.error("Missing environment variable MMD_ARCHIVE_PATH")
         sys.exit(1)

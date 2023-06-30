@@ -20,8 +20,11 @@ import os
 import sys
 import logging
 import psycopg2
+from time import sleep
+from threading import Thread
+from datetime import datetime
 
-from catalog_rebuilder import rebuild_task, getListOfFiles, app
+from catalog_rebuilder import rebuild_task, getListOfFiles, app, dmci_dist_ingest_task
 from catalog_tools import csw_getCount, rejected_delete, get_solrstatus
 from catalog_tools import csw_truncateRecords, get_xml_file_count
 
@@ -33,7 +36,6 @@ from requests.auth import HTTPBasicAuth as BasicAuth
 from solrindexer import IndexMMD
 
 from celery.result import GroupResult, ResultBase
-
 from main import CONFIG, jobdata
 
 """Initialize logging"""
@@ -235,11 +237,22 @@ class AdminApp(Flask):
                                                  distributors])
                 jobdata['current_task_id'] = task.id
 
-                return jsonify({}), 202, {'Location': url_for('rebuild_taskstatus',
-                                          task_id=task.id)}
             except Exception as e:
                 message = "Somthing went wrong running task. is redis and celery running? "
                 return message + e, 500
+
+            """Start background daemon collection results"""
+            resultDaemon = Thread(target=process_results)
+            resultDaemon.daemon = True
+            resultDaemon.start()
+
+            """Register rebuild start date"""
+            now = datetime.now()
+            last_rebuild = now.strftime("%d/%m/%Y, %H:%M:%S")
+            jobdata['last_rebuild'] = last_rebuild
+            jobdata['failed_statis_report'] = dict()
+            return jsonify({}), 202, {'Location': url_for('rebuild_taskstatus',
+                                      task_id=task.id)}
             # return "OK", 200
 
         # POST Rebuild catalog.
@@ -267,92 +280,80 @@ class AdminApp(Flask):
 
         @self.route('/rebuild/result')
         def rebuild_result():
-            if jobdata['current_task_id'] is not None:
-                result_dict = dict()
-                task = rebuild_task.AsyncResult(jobdata['current_task_id'])
-                logger.debug(task.state)
-                if task.successful():
-                    # logger.debug(task.children)
-                    for ingest_task in task.children:
-                        if isinstance(ingest_task, list):
-                            for t in ingest_task:
-                                logger.debug(t.name)
-                                logger.debug(t.args)
+            response_obj = dict()
+            response_obj['previous_task_status'] = jobdata['previous_task_status']
+            result_dict = jobdata['results']
+            if 'current_task_id' in jobdata and jobdata['current_task_id'] is not None:
+                task_id = jobdata['current_task_id']
+                task = rebuild_task.AsyncResult(task_id)
+                response_obj['current'] = task.info.get('total', 0),
+                response_obj['total'] = task.info.get('total', 1),
+                response_obj['status'] = task.info.get('status', '')
+                response_obj['state'] = task.state
 
-                        if isinstance(ingest_task, GroupResult):
-                            for t in ingest_task.children:
-                                logger.debug(t.get())
-                                status, file, msg = t.get()
-                                if status is False:
-                                    result_dict[file] = msg
-                                    # file = msg.split('XZZZX')[0]
-                                    # reason = msg.split('XZZZX')[1]
-                                    # result_dict[file] = reason
-                    if len(result_dict) == 0:
-                        return {"message": "State: {0}".format(task.state),
-                                "Result": "All files sucessfully added"}
-                    else:
-                        return {"message": "State: FINISHED",
-                                "Failed status": result_dict}, 200
-                else:
-                    {"message": "Rebuild job is still running"}
             else:
-                return {"message": "State: No rebuild job running"}
+                response_obj['state'] = 'Not running'
+            response_obj['rebuild_start_time'] = jobdata['last_rebuild']
+            response_obj['rebuild_summary'] = jobdata['last_rebuild_info']
+            response_obj['failed_status_report'] = result_dict
+            return jsonify(response_obj), 200
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
             task = rebuild_task.AsyncResult(task_id)
             if task is None:
                 return jsonify({"Job not running...See logs"})
-            logger.debug(task.state)
-
-            if task.state == 'PENDING':
-                response = {
-                    'state': task.state,
-                    'current': 0,
-                    'total': 1,
-                    'status': task.info.get('status', '')
-
-                }
-            elif task.state == 'REVOKED':
-                response = {
-                    'state': task.state,
-                    'current': 0,
-                    'total': 1,
-                    'status': "Manually revoked task"
-
-                }
-
-            elif task.state == 'SUCCESS':
-                response = {
-                    'state': task.state,
-                    'current': task.info.get('total', 0),
-                    'total': task.info.get('total', 1),
-                    'status': task.info.get('status', '')
-
-                }
-                if 'result' in task.info:
-                    response['result'] = task.info['result']
-            elif task.state != 'FAILURE':
-                response = {
-                    'state': task.state,
-                    'current': task.info.get('current', 0),
-                    'total': task.info.get('total', 1),
-                    'status': task.info.get('status', '')
-
-                }
-                if 'result' in task.info:
-                    response['result'] = task.info['result']
             else:
-                # something went wrong in the background job
-                response = {
-                    'state': task.state,
-                    'current': 1,
-                    'total': 1,
-                    'status': str(task.info),  # this is the exception raised
-                }
-                #
-            return jsonify(response)
+                logger.debug(task.state)
+
+                if task.state == 'PENDING':
+                    response = {
+                        'state': task.state,
+                        'current': 0,
+                        'total': 1,
+                        'status': task.info.get('status', '')
+
+                    }
+                elif task.state == 'REVOKED':
+                    response = {
+                        'state': task.state,
+                        'current': 0,
+                        'total': 1,
+                        'status': "Manually revoked task"
+
+                    }
+
+                elif task.state == 'SUCCESS':
+                    # jobdata['current_task_id'] = None
+                    response = {
+                        'state': task.state,
+                        'current': task.info.get('total', 0),
+                        'total': task.info.get('total', 1),
+                        'status': task.info.get('status', '')
+
+                    }
+                    if 'result' in task.info:
+                        response['result'] = task.info['result']
+                elif task.state != 'FAILURE':
+                    response = {
+                        'state': task.state,
+                        'current': task.info.get('current', 0),
+                        'total': task.info.get('total', 1),
+                        'status': task.info.get('status', '')
+
+                    }
+                    if 'result' in task.info:
+                        response['result'] = task.info['result']
+                else:
+                    # something went wrong in the background job
+                    response = {
+                        'state': task.state,
+                        'current': 1,
+                        'total': 1,
+                        'status': str(task.info),  # this is the exception raised
+                    }
+                    #
+                return jsonify(response)
 
         def _get_archive_files_count():
             """Get Archive files list"""
@@ -395,3 +396,104 @@ class AdminApp(Flask):
                 else:
                     pass
 
+        def process_results():
+            """Process task results as they are completed"""
+            result_dict = dict()
+            results_processed = False
+            while True:
+                task = None
+                try:
+                    task = rebuild_task.AsyncResult(jobdata['current_task_id'])
+                    logger.debug("Main task id: %s", task.id)
+                    logger.debug("Main task state %s", task.state)
+                    if task.state == 'PROGRESS':
+                        logger.debug("New running task..set collect-status as false")
+                        results_processed = False
+                        jobdata['results'] = dict()
+                except Exception:
+                    logger.info("No running task...waiting...")
+                    pass
+                if task is not None:
+                    parentJobId = None
+                    try:
+                        parentJobId = task.info.get('parent_job_id', None)
+                        logger.debug("Got parent job id: %s", parentJobId)
+                        parentJob = dmci_dist_ingest_task.AsyncResult(parentJobId)
+                        logger.info("Found parent mmd job task. Collecting results")
+                        logger.debug(type(parentJob))
+                        # for t in parentJob.collect():
+                        #  logger.debug(type(t))
+                        for t in parentJob.children:
+                            logger.debug(type(t))
+
+                    except Exception:
+                        pass
+
+                    mmdJobId = None
+                    try:
+                        mmdJobId = task.info.get('mmd_job_id', None)
+                        logger.debug("Got mmd job id: %s", mmdJobId)
+                        mmdJob = dmci_dist_ingest_task.AsyncResult(mmdJobId)
+                        logger.info("Found parent mmd job task. Collecting results")
+                        logger.debug(type(mmdJob))
+                        # for t in mmdJob.collect():
+                        #     logger.debug(type(t))
+                        for t in mmdJob.children:
+                            logger.debug(type(t))
+
+                    except Exception:
+                        pass
+
+                    if task.ready() and results_processed is False:
+                        logger.debug("Main task finished. Collecting results....")
+                        for ingest_task in task.children:
+                            if isinstance(ingest_task, list):
+                                for t in ingest_task:
+                                    logger.debug(t.name)
+                                    logger.debug(t.args)
+
+                            if isinstance(ingest_task, GroupResult):
+                                for t in ingest_task.children:
+                                    # logger.debug(t.get())
+                                    status, file, msg = t.get()
+                                    if status is False:
+                                        result_dict[file] = msg
+                        jobdata['results'] = result_dict
+                        jobdata['last_rebuild_info'] = task.info.get('status', '')
+                        results_processed = True
+                logger.debug("Sleeeping and check for new job")
+                sleep(10)
+                logger.debug("End while")
+            # if task.successful():
+            #     # logger.debug(task.children)
+            #     for ingest_task in task.children:
+            #         if isinstance(ingest_task, list):
+            #             for t in ingest_task:
+            #                 logger.debug(t.name)
+            #                 logger.debug(t.args)
+
+            #         if isinstance(ingest_task, GroupResult):
+            #             for t in ingest_task.children:
+            #                 # logger.debug(t.get())
+            #                 status, file, msg = t.get()
+            #                 if status is False:
+            #                     result_dict[file] = msg
+            #                     # file = msg.split('XZZZX')[0]
+            #                     # reason = msg.split('XZZZX')[1]
+            #                     # result_dict[file] = reason
+
+        def _recurse_results(tasks):
+            """recursive task result loop function function"""
+            for task in tasks:
+                if isinstance(task, GroupResult):
+                    if task.successful():
+                        status, file, msg = task.get()
+                        logger.debug("%s: %s: %s", status, file, msg)
+                elif isinstance(task, ResultBase):
+                    if task.successful():
+                        status, file, msg = task.get()
+                        logger.debug("%s: %s: %s", status, file, msg)
+                elif isinstance(task, list):
+                    _revoke_tasks(task)
+                else:
+                    pass
