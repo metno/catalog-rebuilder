@@ -27,7 +27,8 @@ from datetime import datetime
 from catalog_rebuilder import rebuild_task, getListOfFiles, app, dmci_dist_ingest_task
 from catalog_tools import csw_getCount, rejected_delete, get_solrstatus
 from catalog_tools import csw_truncateRecords, get_xml_file_count
-
+from catalog_tools import countParentUUIDList, csw_getParentCount
+from catalog_tools import get_solrParentCount, get_unique_parent_refs
 
 from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_httpauth import HTTPBasicAuth
@@ -123,19 +124,28 @@ class AdminApp(Flask):
             archive_files = _get_archive_files_count()
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
+            parent_uuid_list = _get_parent_uuid_list_count()
             """ Get CSW records"""
             csw_records = csw_getCount(self.csw_connection)
+            csw_parent_count = csw_getParentCount(self.csw_connection)
 
             solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                       self.solr_auth)
+            solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                       self.solr_auth)
+            solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                              self.solr_auth)
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
                                    rejected_files=rejected_files,
-                                   workdir_files=workdir_files
-
+                                   workdir_files=workdir_files,
+                                   parent_uuid_list=parent_uuid_list,
+                                   csw_parent_count=csw_parent_count,
+                                   solr_parent_count=solr_parent_count,
+                                   solr_parent_unique=solr_parent_unique
                                    )
 
         # Show catalog status
@@ -238,7 +248,7 @@ class AdminApp(Flask):
                 jobdata['current_task_id'] = task.id
 
             except Exception as e:
-                message = "Somthing went wrong running task. is redis and celery running? "
+                message = "Something went wrong running task. is redis and celery running? "
                 return message + e, 500
 
             """Start background daemon collection results"""
@@ -307,11 +317,15 @@ class AdminApp(Flask):
                 logger.debug(task.state)
 
                 if task.state == 'PENDING':
+                    if task.info is not None:
+                        task_status = task.info.get('status', '')
+                    else:
+                        task_status = ''
                     response = {
                         'state': task.state,
                         'current': 0,
                         'total': 1,
-                        'status': task.info.get('status', '')
+                        'status': task_status
 
                     }
                 elif task.state == 'REVOKED':
@@ -378,11 +392,29 @@ class AdminApp(Flask):
             return workdir_files
 
         def _get_solr_count(solr_url, authentication):
-            """Get SOLR documents"""
+            """Get SOLR documents count"""
             solr_status = get_solrstatus(solr_url, authentication)
             solr_docs = solr_status['numDocs']
             solr_current = solr_status['current']
             return solr_docs, solr_current
+
+        def _get_solr_parent_count(solr_url, authentication):
+            """Get SOLR parent count"""
+            solr_status = get_solrParentCount(solr_url, authentication)
+            # solr_docs = solr_status['numDocs']
+            # solr_current = solr_status['current']
+            return solr_status
+
+        def _get_solr_parent__refs_count(solr_url, authentication):
+            """Get SOLR parent count"""
+            solr_status = get_unique_parent_refs(solr_url, authentication)
+            # solr_docs = solr_status['numDocs']
+            # solr_current = solr_status['current']
+            return solr_status
+
+        def _get_parent_uuid_list_count():
+            parent_list = self._conf.path_to_parent_list
+            return countParentUUIDList(parent_list)
 
         def _revoke_tasks(tasks):
             """recursive task revoke function"""

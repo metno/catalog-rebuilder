@@ -35,6 +35,32 @@
 <span><em>SolR updates (commits) every 10 minutes. When a line is shown in the solr documents count, it
   means it is not the current commit.
 </em></span>
+<br>
+<h1>Parent/Child relation integrity</h1>
+<table>
+  <tr>
+    <th>Distributor</th>
+    <th>Parents count</th>
+  </tr>
+<tr>
+<td>Parent UUID list: </td>
+<td> {{ parent_uuid_list }}</td>
+</tr>
+<tr>
+<td>CSW: </td>
+<td>{{ csw_parent_count }}</td>
+</tr>
+<tr>
+<td>Solr marked parents: </td>
+<td>{{ solr_parent_count }}</td>
+</tr>
+<tr>
+  <td>Solr unique parent ids: </td>
+  <td>{{ solr_parent_unique }}</td>
+  </tr>
+
+</table>
+
 
 
 
