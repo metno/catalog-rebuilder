@@ -44,6 +44,35 @@
     means it is not the current commit.
   </em></span>
 
+  <h1>Parent/Child relation integrity</h1>
+<table>
+  <tr>
+    <th>Distributor</th>
+    <th>Parents count</th>
+  </tr>
+<tr>
+<td>Parent UUID list: </td>
+<td> {{ parent_uuid_list }}</td>
+</tr>
+<tr>
+<td>CSW marked parents: </td>
+<td>{{ csw_parent_count }}</td>
+</tr>
+<tr>
+  <td>CSW distinct parentidentifiers: </td>
+  <td>{{ csw_distinct_parent_ids }}</td>
+  </tr>
+<tr>
+<td>Solr marked parents: </td>
+<td>{{ solr_parent_count }}</td>
+</tr>
+<tr>
+  <td>Solr unique parent ids: </td>
+  <td>{{ solr_parent_unique }}</td>
+  </tr>
+
+</table>
+
   <h2>DMCI</h2>
   <table>
     <tr>

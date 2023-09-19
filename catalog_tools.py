@@ -49,6 +49,14 @@ def csw_getParentCount(connection):
     return result.pop()[0]
 
 
+def csw_getDistinctParentsCount(connection):
+    cur = connection.cursor()
+    cur.execute("""SELECT COUNT(DISTINCT parentidentifier) FROM RECORDS""")
+    result = cur.fetchall()
+    cur.close()
+    return result.pop()[0]
+
+
 def csw_truncateRecords(connection):
     try:
         cur = connection.cursor()
@@ -135,7 +143,7 @@ def get_unique_parent_refs(solr_url, authentication=None):
     try:
         res = requests.get(solr_url +
                            '/select?q=*:*&json.facet.x=' +
-                           '"unique(related_dataset)"&wt=json&indent=true&rows=0',
+                           '"hll(related_dataset_id)"&wt=json&indent=true&rows=0',
                            auth=authentication)
         res.raise_for_status()
     except requests.exceptions.HTTPError as errh:
@@ -151,6 +159,7 @@ def get_unique_parent_refs(solr_url, authentication=None):
         return None
     else:
         status = res.json()
+        logger.info(status)
         return status['facets']['x']
 
 

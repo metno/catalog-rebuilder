@@ -27,7 +27,7 @@ from datetime import datetime
 from catalog_rebuilder import rebuild_task, getListOfFiles, app, dmci_dist_ingest_task
 from catalog_tools import csw_getCount, rejected_delete, get_solrstatus
 from catalog_tools import csw_truncateRecords, get_xml_file_count
-from catalog_tools import countParentUUIDList, csw_getParentCount
+from catalog_tools import countParentUUIDList, csw_getParentCount, csw_getDistinctParentsCount
 from catalog_tools import get_solrParentCount, get_unique_parent_refs
 
 from flask import Flask, render_template, request, url_for, redirect, jsonify
@@ -128,6 +128,7 @@ class AdminApp(Flask):
             """ Get CSW records"""
             csw_records = csw_getCount(self.csw_connection)
             csw_parent_count = csw_getParentCount(self.csw_connection)
+            csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
 
             solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                       self.solr_auth)
@@ -144,6 +145,7 @@ class AdminApp(Flask):
                                    workdir_files=workdir_files,
                                    parent_uuid_list=parent_uuid_list,
                                    csw_parent_count=csw_parent_count,
+                                   csw_distinct_parent_ids=csw_distinct_parent_ids,
                                    solr_parent_count=solr_parent_count,
                                    solr_parent_unique=solr_parent_unique
                                    )
@@ -160,11 +162,20 @@ class AdminApp(Flask):
             archive_files = _get_archive_files_count()
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
+            parent_uuid_list = _get_parent_uuid_list_count()
 
             """ Get CSW records and SolR docs"""
+            """ Get CSW records"""
             csw_records = csw_getCount(self.csw_connection)
+            csw_parent_count = csw_getParentCount(self.csw_connection)
+            csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+
             solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                       self.solr_auth)
+            solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                       self.solr_auth)
+            solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                              self.solr_auth)
             if jobdata['current_task_id'] is not None:
                 task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                 logger.debug(task.state)
@@ -178,6 +189,11 @@ class AdminApp(Flask):
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
+                                   parent_uuid_list=parent_uuid_list,
+                                   csw_parent_count=csw_parent_count,
+                                   csw_distinct_parent_ids=csw_distinct_parent_ids,
+                                   solr_parent_count=solr_parent_count,
+                                   solr_parent_unique=solr_parent_unique,
                                    rejected_files=rejected_files,
                                    workdir_files=workdir_files,
                                    current_task=jobdata['current_task_id'],
