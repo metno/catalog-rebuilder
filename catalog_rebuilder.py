@@ -82,16 +82,16 @@ indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
 
 class CRPyCSWMDist(PyCSWDist):
     """Override PyCSwDist  with the given config read from rebuilder"""
-    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
-        super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
+    def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
+        super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CONFIG
         return
 
 
 class CRSolrDist(SolRDist):
     """Override SolRDist  with the given config read from rebuilder"""
-    def __init__(self, cmd, xml_file=None, metadata_id=None, worker=None, **kwargs):
-        super().__init__(cmd, xml_file, metadata_id, worker, **kwargs)
+    def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
+        super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CONFIG
         # self._conf.fail_on_missing_parent = False
         self.authentication = self._init_authentication()
@@ -394,7 +394,7 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
             obj = worker.CALL_MAP[dist](
                 worker._dist_cmd,
                 xml_file=mmd_path,
-                metadata_id=worker._dist_metadata_id,
+                metadata_UUID=worker._dist_metadata_id_uuid,
                 worker=worker,
                 path_to_parent_list=CONFIG.path_to_parent_list
             )

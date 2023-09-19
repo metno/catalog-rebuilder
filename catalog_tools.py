@@ -142,7 +142,7 @@ def get_unique_parent_refs(solr_url, authentication=None):
     res = None
     try:
         res = requests.get(solr_url +
-                           '/select?q=*:*&json.facet.x=' +
+                           '/select?q=*:*&json.facet.parents=' +
                            '"hll(related_dataset_id)"&wt=json&indent=true&rows=0',
                            auth=authentication)
         res.raise_for_status()
@@ -160,7 +160,10 @@ def get_unique_parent_refs(solr_url, authentication=None):
     else:
         status = res.json()
         logger.info(status)
-        return status['facets']['x']
+        if status.get('facets', {}).get('parents') is None:
+            return 0
+        else:
+            return status['facets']['parents']
 
 
 def countParentUUIDList(uuid_list):
