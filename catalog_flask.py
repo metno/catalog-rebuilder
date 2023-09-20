@@ -87,13 +87,14 @@ class AdminApp(Flask):
         """Read CSW CONFIG """
         self.csw_username = os.environ.get("PG_CSW_USERNAME", CONFIG.csw_postgis_user)
         self.csw_password = os.environ.get("PG_CSW_PASSWORD", CONFIG.csw_postgis_password)
+        pg_port = os.environ.get("PG_CSW_PORT", 5432)
         # db_url = "postgis-operator"
         db_url = os.environ.get("PG_CSW_DB_URL", CONFIG.csw_postgis_host)
         logger.info("Connectiong to pycsw postgis: %s", db_url)
         self.csw_connection = psycopg2.connect(host=db_url,
                                                user=self.csw_username,
                                                password=self.csw_password,
-                                               dbname='csw_db', port=5432)
+                                               dbname='csw_db', port=pg_port)
         self.csw_connection.autocommit = True
         self.solr_auth = None
         """Solr connection"""
@@ -294,11 +295,12 @@ class AdminApp(Flask):
                 app.control.purge()
                 task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                 task.revoke(terminate=True)
-                logger.debug(task.state)
-                for ingest_tasks in task.children:
-                    _revoke_tasks(ingest_tasks)
+                # logger.debug(task.state)
+                if task is not None:
+                    for ingest_tasks in task.children:
+                        _revoke_tasks(ingest_tasks)
                 #         ingest_task.revoke(terminate=True)
-                task.revoke(terminate=True)
+                    task.revoke(terminate=True)
                 jobdata['previous_task_status'] = "Revoked" + " : " + "Manually canceled."
                 jobdata['current_task_id'] = None
 
