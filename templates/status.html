@@ -41,26 +41,32 @@
   <tr>
     <th>Distributor</th>
     <th>Parents count</th>
+    <th>Description</th>
   </tr>
 <tr>
 <td>Parent UUID list: </td>
 <td> {{ parent_uuid_list }}</td>
+<td>Number of IDs in <a href="https://gitlab.met.no/tjenester/s-enda/-/blob/dev/base/dmci/config-dmci/parent-uuid-list.xml?ref_type=heads">list of MMD parent datasets</a></td>
 </tr>
 <tr>
 <td>CSW marked parents: </td>
 <td>{{ csw_parent_count }}</td>
+<td>Number of MMD parents registered in CSW (as ISO19115 dataset series)</td>
 </tr>
 <tr>
   <td>CSW distinct parentidentifiers: </td>
   <td>{{ csw_distinct_parent_ids }}</td>
+  <td>Number of distinct datasets referenced as related dataset of type 'parent' in CSW</td>
   </tr>
 <tr>
 <td>Solr marked parents: </td>
 <td>{{ solr_parent_count }}</td>
+<td>Number of MMD parents registered in Solr</td>
 </tr>
 <tr>
   <td>Solr unique parent ids: </td>
   <td>{{ solr_parent_unique }}</td>
+  <td>Number of distinct datasets referenced as related dataset of type 'parent' in Solr</td>
   </tr>
 
 </table>
