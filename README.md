@@ -49,6 +49,10 @@ DMCI worker object.
 Start celery as such:
 `celery --app catalog_rebuilder.app worker --loglevel=DEBUG`
 
+## Redis storage sidecar
+
+The celery worker and flask app communicate through a Redis queue instance, so a redis sidecar container is also needed.
+
 ## License
 
 Copyright 2021 MET Norway
