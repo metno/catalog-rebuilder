@@ -87,15 +87,11 @@ class AdminApp(Flask):
         """Read CSW CONFIG """
         self.csw_username = os.environ.get("PG_CSW_USERNAME", CONFIG.csw_postgis_user)
         self.csw_password = os.environ.get("PG_CSW_PASSWORD", CONFIG.csw_postgis_password)
-        pg_port = os.environ.get("PG_CSW_PORT", 5432)
+        self.pg_port = os.environ.get("PG_CSW_PORT", 5432)
         # db_url = "postgis-operator"
-        db_url = os.environ.get("PG_CSW_DB_URL", CONFIG.csw_postgis_host)
-        logger.info("Connectiong to pycsw postgis: %s", db_url)
-        self.csw_connection = psycopg2.connect(host=db_url,
-                                               user=self.csw_username,
-                                               password=self.csw_password,
-                                               dbname='csw_db', port=pg_port)
-        self.csw_connection.autocommit = True
+        self.db_url = os.environ.get("PG_CSW_DB_URL", CONFIG.csw_postgis_host)
+        # logger.info("Connectiong to pycsw postgis: %s", db_url)
+        self.csw_connection = None
         self.solr_auth = None
         """Solr connection"""
         if self._conf.solr_username is not None and self._conf.solr_password is not None:
@@ -121,6 +117,8 @@ class AdminApp(Flask):
         @self.route("/status")
         def status():
             """ Return integrity status of the catalog. Include number of rejected files"""
+            self.csw_connection = _get_pg_connection()
+            self.csw_connection.autocommit = True
             logger.debug(self.template_folder)
             archive_files = _get_archive_files_count()
             rejected_files = _get_rejected_files_count()
@@ -137,6 +135,8 @@ class AdminApp(Flask):
                                                        self.solr_auth)
             solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
                                                               self.solr_auth)
+
+            self.csw_connection.close()
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -158,7 +158,8 @@ class AdminApp(Flask):
             """Simple form with buttons to manage rejected files and rebuild catalog.
             Form will have buttons that execute the below POST endpoints"""
             """Global job result dict"""
-
+            self.csw_connection = _get_pg_connection()
+            self.csw_connection.autocommit = True
             """Get DMCI info"""
             archive_files = _get_archive_files_count()
             rejected_files = _get_rejected_files_count()
@@ -185,6 +186,7 @@ class AdminApp(Flask):
                     jobdata['previous_task_status'] += " : " + str(task.info)
                     # jobdata['current_task_id'] = None
 
+            self.csw_connection.close()
             return render_template("admin.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -236,9 +238,12 @@ class AdminApp(Flask):
         @self.route("/pycsw/clean", methods=["POST"])
         @self.auth.login_required
         def clean_pycsw():
+            self.csw_connection = _get_pg_connection()
+            self.csw_connection.autocommit = True
             """ clean / delete pycsw"""
             status, msg = csw_truncateRecords(self.csw_connection)
             referrer = request.referrer
+            self.csw_connection.close()
             if referrer is not None:
                 if '/admin' in referrer:
                     return redirect(url_for('admin'))
@@ -386,6 +391,13 @@ class AdminApp(Flask):
                     }
                     #
                 return jsonify(response)
+
+        def _get_pg_connection():
+            conn = psycopg2.connect(host=self.db_url,
+                                    user=self.csw_username,
+                                    password=self.csw_password,
+                                    dbname='csw_db', port=self.pg_port)
+            return conn
 
         def _get_archive_files_count():
             """Get Archive files list"""
