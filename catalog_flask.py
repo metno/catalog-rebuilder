@@ -53,6 +53,9 @@ logger.addHandler(stream_handler)
 
 
 class AdminApp(Flask):
+    """
+    The main flask app for the catalog rebuilder with status and admin endpoints
+    """
 
     def __init__(self, *args, **kwargs):
         if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
