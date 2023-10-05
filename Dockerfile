@@ -11,6 +11,11 @@ WORKDIR /tmp
 # Set config file for dmci
 ENV DMCI_CONFIG=/config.yaml
 
+# Set prefix for git config file
+ENV PREFIX=/tmp
+RUN mkdir -p /tmp/etc && \
+    touch /tmp/etc/gitconfig
+
 RUN apt-get -qqy update && \
   apt-get -qqy install \
   ca-certificates \
@@ -29,7 +34,7 @@ RUN apt-get -qqy update && \
 
 
 # Download MMD and use local copy of schema (see sed command below)
-RUN git config --file /tmp/.gitconfig advice.detachedHead false 
+RUN git config --global advice.detachedHead false 
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
   mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
   cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
@@ -57,8 +62,8 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
-RUN git config --file /tmp/.gitconfig --add safe.directory /repo 
-RUN git config --file /tmp/.gitconfig  user.name "catalog-rebuilder"
+RUN git config --global --add safe.directory /repo 
+RUN git config --global  user.name "catalog-rebuilder"
 
 VOLUME /archive
 
