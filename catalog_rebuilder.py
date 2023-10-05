@@ -126,11 +126,10 @@ class Worker(DmciWorker):
 
 """Initialize Celery"""
 redis_broker = str(CONFIG.redis_broker) + '/0'
+redis_backend = str(CONFIG.redis_broker) + '/0'
 app = Celery('rebuilder',
-             broker=redis_broker)
-app.conf.update(broker_url=CONFIG.redis_broker,
-                result_backend=CONFIG.redis_broker,
-                task_serializer='json',
+             broker=redis_broker, backend=redis_backend)
+app.conf.update(task_serializer='json',
                 accept_content=['json'],  # Ignore other content
                 result_serializer='json',
                 timezone='Europe/Oslo',
