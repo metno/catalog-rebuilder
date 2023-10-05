@@ -57,7 +57,7 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
-RUN git config --file /tmp/.gitconfig -add safe.directory /repo 
+RUN git config --file /tmp/.gitconfig --add safe.directory /repo 
 RUN git config --file /tmp/.gitconfig  user.name "catalog-rebuilder"
 
 VOLUME /archive
