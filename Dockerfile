@@ -63,7 +63,7 @@ VOLUME /archive
 ENTRYPOINT ["dumb-init", "--"]
 
 # Start application
-CMD gunicorn --worker-class sync --workers "1" --bind 0.0.0.0:5000 'main:create_app()' --keep-alive "5" --log-level DEBUG
+CMD gunicorn --worker-class sync --workers "1" --bind 0.0.0.0:5000 'main:create_app()' --timeout 600 --keep-alive "5" --log-level DEBUG
 
 # For Celery App override with:
 # celery --app catalog_rebuilder.app worker --loglevel=DEBUG
