@@ -6,6 +6,8 @@ ARG GUNICORN_VERSION="~=20.1"
 ARG MMD_REPO=https://github.com/metno/mmd
 ARG MMD_VERSION=v3.5
 
+WORKDIR /tmp
+
 # Set config file for dmci
 ENV DMCI_CONFIG=/config.yaml
 
@@ -56,6 +58,7 @@ VOLUME /dmci
 # Override directory, expected to have persistent storage
 VOLUME /repo
 RUN git config --global --add safe.directory /repo
+RUN git config --global user.name "catalog-rebuilder"
 
 VOLUME /archive
 
