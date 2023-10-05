@@ -29,7 +29,7 @@ RUN apt-get -qqy update && \
 
 
 # Download MMD and use local copy of schema (see sed command below)
-RUN git config --global advice.detachedHead false --file /tmp/.gitconfig
+RUN git config --file /tmp/.gitconfig advice.detachedHead false 
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
   mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
   cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
@@ -57,8 +57,8 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
-RUN git config --global --add safe.directory /repo --file /tmp/.gitconfig
-RUN git config --global user.name "catalog-rebuilder" -file /tmp/.gitconfig
+RUN git config --file /tmp/.gitconfig -add safe.directory /repo 
+RUN git config --file /tmp/.gitconfig  user.name "catalog-rebuilder"
 
 VOLUME /archive
 
