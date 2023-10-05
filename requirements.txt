@@ -12,3 +12,4 @@ celery
 flower
 redis
 asyncio
+eventlet
