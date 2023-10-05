@@ -12,31 +12,31 @@ WORKDIR /tmp
 ENV DMCI_CONFIG=/config.yaml
 
 RUN apt-get -qqy update && \
-    apt-get -qqy install \
-      ca-certificates \
-      dumb-init \
-      git \
-      htop \
-      libxml2 \
-      libxslt1.1 \
-      python3-lxml \
-      python3-pip \
-      python3-wheel \
-      wget \
-      python3 \
-    && rm -rf /var/lib/apt/lists/* && \
-    pip install "gunicorn${GUNICORN_VERSION}"
+  apt-get -qqy install \
+  ca-certificates \
+  dumb-init \
+  git \
+  htop \
+  libxml2 \
+  libxslt1.1 \
+  python3-lxml \
+  python3-pip \
+  python3-wheel \
+  wget \
+  python3 \
+  && rm -rf /var/lib/apt/lists/* && \
+  pip install "gunicorn${GUNICORN_VERSION}"
 
 
 # Download MMD and use local copy of schema (see sed command below)
-RUN git config --global advice.detachedHead false
+RUN git config --global advice.detachedHead false --file /tmp/.gitconfig
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
-    mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
-    cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
-    cp -a /tmp/mmd/xsd/* /usr/share/mmd/xsd && \
-    sed -Ei 's#http\://www.w3.org/2001/(xml.xsd)#\1#g' /usr/share/mmd/xsd/*.xsd && \
-    rm -rf /tmp/mmd && \
-    rm -fr /dst
+  mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
+  cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
+  cp -a /tmp/mmd/xsd/* /usr/share/mmd/xsd && \
+  sed -Ei 's#http\://www.w3.org/2001/(xml.xsd)#\1#g' /usr/share/mmd/xsd/*.xsd && \
+  rm -rf /tmp/mmd && \
+  rm -fr /dst
 
 ADD . /app
 
@@ -57,8 +57,8 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
-RUN git config --global --add safe.directory /repo
-RUN git config --global user.name "catalog-rebuilder"
+RUN git config --global --add safe.directory /repo --file /tmp/.gitconfig
+RUN git config --global user.name "catalog-rebuilder" -file /tmp/.gitconfig
 
 VOLUME /archive
 
