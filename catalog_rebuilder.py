@@ -176,7 +176,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     current = 0
     # failed = 0
 
-    self.update_state(state='PROGRESS',
+    self.update_state(state='PENDING',
                       meta={'current': current, 'total': total, 'status': 'Preparing parents'})
 
     parentList = getParentUUIDs(parentlist_path)

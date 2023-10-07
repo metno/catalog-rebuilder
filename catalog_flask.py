@@ -471,7 +471,8 @@ class AdminApp(Flask):
                     task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                     logger.debug("Main task id: %s", task.id)
                     logger.debug("Main task state %s", task.state)
-                    if task.state == 'PROGRESS':
+                    current = task.info.get('current', None)
+                    if task.state == 'PENDING' and current == 0:
                         logger.debug("New running task..set collect-status as false")
                         results_processed = False
                         jobdata['results'] = dict()
