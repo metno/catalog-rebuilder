@@ -360,7 +360,7 @@ class AdminApp(Flask):
         @self.route('/rebuild/report')
         def rebuild_report():
             try:
-                data = open('rebuild-report.json').read()
+                data = open('/repo/rebuild-report.json').read()
                 res_dict = json.loads(data)
             except Exception:
                 return jsonify({})
@@ -586,7 +586,7 @@ class AdminApp(Flask):
                         # for item in json_obj:
                         #     for key, value in item:
                         #         item[key] = value.strip()
-                        with open("rebuild-report.json", "w") as final:
+                        with open(os.path.join("/repo/", "rebuild-report.json"), "w") as final:
                             final.write(json_obj)
                         jobdata['current_task_id'] = None
 
