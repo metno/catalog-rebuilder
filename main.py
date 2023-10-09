@@ -35,9 +35,11 @@ jobdata['previous_task_status'] = None
 jobdata['total'] = 0
 jobdata['current'] = 0
 jobdata['failed'] = 0
-jobdata['results'] = dict()
+jobdata['results'] = None
 jobdata['last_rebuild'] = ''
 jobdata['last_rebuild_info'] = None
+
+resultData = Manager().dict()
 
 
 # # App Initialization

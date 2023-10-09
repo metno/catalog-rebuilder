@@ -18,6 +18,7 @@ limitations under the License.
 """
 import os
 import sys
+import json
 import logging
 import psycopg2
 from time import sleep
@@ -36,8 +37,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from requests.auth import HTTPBasicAuth as BasicAuth
 from solrindexer import IndexMMD
 
-from celery.result import GroupResult, ResultBase
-from main import CONFIG, jobdata
+from celery.result import GroupResult, ResultBase, AsyncResult
+from main import CONFIG, jobdata, resultData
 
 """Initialize logging"""
 logger = logging.getLogger(__name__)
@@ -221,6 +222,21 @@ class AdminApp(Flask):
             if status is False:
                 return {"message": msg}, 500
 
+        # POST Clean workdir folder
+        @self.route("/workdir/clean", methods=["POST"])
+        @self.auth.login_required
+        def clean_workdir():
+            """ Clean / Delete all files in workdir folder"""
+            status, msg = rejected_delete(self._conf.distributor_cache)
+            referrer = request.referrer
+            if referrer is not None:
+                if '/admin' in referrer:
+                    return redirect(url_for('admin'))
+            if status is True:
+                return {"message": "OK"}, 200
+            if status is False:
+                return {"message": msg}, 500
+
         # POST Delete all solr documents in index
         @self.route("/solr/clean", methods=["POST"])
         @self.auth.login_required
@@ -271,6 +287,9 @@ class AdminApp(Flask):
                                                  self._conf.path_to_parent_list,
                                                  distributors])
                 jobdata['current_task_id'] = task.id
+                # pid = open('rebuild.pid', 'w')
+                # pid.write(task.id)
+                # pid.close()
 
             except Exception as e:
                 message = "Something went wrong running task. is redis and celery running? "
@@ -285,7 +304,7 @@ class AdminApp(Flask):
             now = datetime.now()
             last_rebuild = now.strftime("%d/%m/%Y, %H:%M:%S")
             jobdata['last_rebuild'] = last_rebuild
-            jobdata['failed_statis_report'] = dict()
+            jobdata['failed_statis_report'] = None
             return jsonify({}), 202, {'Location': url_for('rebuild_taskstatus',
                                       task_id=task.id)}
             # return "OK", 200
@@ -318,21 +337,34 @@ class AdminApp(Flask):
         def rebuild_result():
             response_obj = dict()
             response_obj['previous_task_status'] = jobdata['previous_task_status']
-            result_dict = jobdata['results']
+            # result_dict = jobdata['results']
             if 'current_task_id' in jobdata and jobdata['current_task_id'] is not None:
                 task_id = jobdata['current_task_id']
                 task = rebuild_task.AsyncResult(task_id)
-                response_obj['current'] = task.info.get('current', 0),
-                response_obj['total'] = task.info.get('total', 1),
-                response_obj['status'] = task.info.get('status', '')
-                response_obj['state'] = task.state
+                if task is not None:
+                    try:
+                        response_obj['current'] = task.info.get('current', 0),
+                        response_obj['total'] = task.info.get('total', 1),
+                        response_obj['status'] = task.info.get('status', '')
+                        response_obj['state'] = task.state
+                    except Exception:
+                        pass
 
             else:
                 response_obj['state'] = 'Not running'
             response_obj['rebuild_start_time'] = jobdata['last_rebuild']
             response_obj['rebuild_summary'] = jobdata['last_rebuild_info']
-            response_obj['failed_status_report'] = result_dict
+            response_obj['failed_status_report'] = resultData.copy()
             return jsonify(response_obj), 200
+
+        @self.route('/rebuild/report')
+        def rebuild_report():
+            try:
+                data = open('rebuild-report.json').read()
+                res_dict = json.loads(data)
+            except Exception:
+                return jsonify({})
+            return jsonify(res_dict)
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
@@ -463,7 +495,7 @@ class AdminApp(Flask):
 
         def process_results():
             """Process task results as they are completed"""
-            result_dict = dict()
+            # result_dict = dict()
             results_processed = False
             while True:
                 task = None
@@ -471,26 +503,35 @@ class AdminApp(Flask):
                     task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                     logger.debug("Main task id: %s", task.id)
                     logger.debug("Main task state %s", task.state)
+                    logger.debug("Main task status %s", task.status)
                     current = task.info.get('current', None)
-                    if task.state == 'PENDING' and current == 0:
+                    logger.debug("main task current: %s", current)
+                    if task.state == 'PENDING' and current == 0 or current is None:
                         logger.debug("New running task..set collect-status as false")
                         results_processed = False
-                        jobdata['results'] = dict()
+                        # jobdata['results'] = result_dict
+
+                    if task.state == 'PROGRESS' and current is not None:
+                        logger.debug("Harvesting main task results...")
+                        for t in task.children:
+                            _recurse_results(t)
+
                 except Exception:
-                    logger.info("No running task...waiting...")
+                    logger.info("No running  main task...waiting...")
                     pass
                 if task is not None:
                     parentJobId = None
+
                     try:
                         parentJobId = task.info.get('parent_job_id', None)
-                        logger.debug("Got parent job id: %s", parentJobId)
-                        parentJob = dmci_dist_ingest_task.AsyncResult(parentJobId)
-                        logger.info("Found parent mmd job task. Collecting results")
-                        logger.debug(type(parentJob))
-                        # for t in parentJob.collect():
-                        #  logger.debug(type(t))
-                        for t in parentJob.children:
-                            logger.debug(type(t))
+                        parentJob = AsyncResult(parentJobId, app=app)
+                        logger.debug("Got parent job id: %s", parentJob.id)
+                        logger.debug("Parent job state %s", parentJob.state)
+                        logger.debug("Parent job status %s", parentJob.status)
+                        if parentJob.state == 'PROGRESS' and current is not None:
+                            logger.debug("Harvesting parent tasks results...")
+                            for t in parentJob.children:
+                                _recurse_results(t)
 
                     except Exception:
                         pass
@@ -498,19 +539,27 @@ class AdminApp(Flask):
                     mmdJobId = None
                     try:
                         mmdJobId = task.info.get('mmd_job_id', None)
-                        logger.debug("Got mmd job id: %s", mmdJobId)
                         mmdJob = dmci_dist_ingest_task.AsyncResult(mmdJobId)
-                        logger.info("Found parent mmd job task. Collecting results")
-                        logger.debug(type(mmdJob))
-                        # for t in mmdJob.collect():
-                        #     logger.debug(type(t))
-                        for t in mmdJob.children:
-                            logger.debug(type(t))
+                        logger.debug("Got mmd job id: %s", mmdJob.id)
+                        logger.debug("mmd job state %s", mmdJob.state)
+                        logger.debug("mmd job status %s", mmdJob.status)
+                        # logger.debug(type(mmdJob))
+                        if mmdJob.state == 'PROGRESS' and current is not None:
+                            logger.debug("Harvesting mmd tasks results...")
+                            for t in task.children:
+                                _recurse_results(t)
+
+                        # for result, value in mmdJob.collect(intermediate=True):
+                        #     logger.debug("mmd task result: %s, mmd task value: %s",
+                        #  result, value)
+                        # if mmdJob is not None:
+                        #     for tasks in mmdJob.collect(intermediate=True):
+                        #         _recurse_results(tasks)
 
                     except Exception:
                         pass
 
-                    if task.ready() and results_processed is False:
+                    if task is not None and task.ready() and results_processed is False:
                         logger.debug("Main task finished. Collecting results....")
                         for ingest_task in task.children:
                             if isinstance(ingest_task, list):
@@ -523,11 +572,29 @@ class AdminApp(Flask):
                                     # logger.debug(t.get())
                                     status, file, msg = t.get()
                                     if status is False:
-                                        result_dict[file] = msg
-                        jobdata['results'] = result_dict
+                                        resultData.update({file: msg})
+                        # jobdata['results'] = result_dict
                         jobdata['last_rebuild_info'] = task.info.get('status', '')
                         results_processed = True
-                logger.debug("Sleeeping and check for new job")
+                        # logger.debug(resultData)
+                        task.forget()
+                        task = None
+                        resultReport = {}
+                        resultReport['jobdata'] = dict(jobdata)
+                        resultReport['results'] = dict(resultData)
+                        json_obj = json.dumps(resultReport, indent=4)
+                        # for item in json_obj:
+                        #     for key, value in item:
+                        #         item[key] = value.strip()
+                        with open("rebuild-report.json", "w") as final:
+                            final.write(json_obj)
+                        jobdata['current_task_id'] = None
+
+                if task is not None:
+                    logger.debug("Waiting for task %s to finish. current state: %s",
+                                 task.id, task.state)
+                else:
+                    logger.debug("Sleeeping and check for new job")
                 sleep(10)
                 logger.debug("End while")
             # if task.successful():
@@ -552,14 +619,29 @@ class AdminApp(Flask):
             """recursive task result loop function function"""
             for task in tasks:
                 if isinstance(task, GroupResult):
-                    if task.successful():
+                    if task.status == "SUCCESS":
                         status, file, msg = task.get()
-                        logger.debug("%s: %s: %s", status, file, msg)
+                        if status is False:
+                            # logger.debug("%s: %s: %s", status, file, msg)
+                            resultData[file] = msg
+
                 elif isinstance(task, ResultBase):
-                    if task.successful():
+                    if task.status == "SUCCESS":
                         status, file, msg = task.get()
-                        logger.debug("%s: %s: %s", status, file, msg)
+                        if status is False:
+                            # logger.debug("%s: %s: %s", status, file, msg)
+                            resultData[file] = msg
+
                 elif isinstance(task, list):
-                    _revoke_tasks(task)
+                    _recurse_results(task)
+                elif isinstance(task, str):
+                    # logger.debug(task)
+                    t = AsyncResult(task, app=app)
+                    if t.status == "SUCCESS":
+                        status, file, msg = t.get()
+                        if status is False:
+                            # logger.debug("%s: %s: %s", status, file, msg)
+                            resultData[file] = msg
                 else:
+                    # logger.debug(type(task))
                     pass

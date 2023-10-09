@@ -41,7 +41,7 @@ import dmci.distributors.distributor
 from solrindexer.indexdata import IndexMMD
 from requests.auth import HTTPBasicAuth
 from celery.utils.log import get_task_logger
-
+from celery.result import ResultBase, GroupResult
 from main import CRConfig
 
 """Bootstrapping Catalog-Rebuilder"""
@@ -180,7 +180,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                       meta={'current': current, 'total': total, 'status': 'Preparing parents'})
 
     parentList = getParentUUIDs(parentlist_path)
-
+    logger.debug("Got %d parents from parents-uuid-list", len(parentList))
     # Keep track of time taken for job.
     st = time.perf_counter()
     pst = time.process_time()
@@ -200,10 +200,13 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.info("Starting catalog rebuilding....")
 
     """First we ingest the parents."""
+    logger.debug("Starting parent_job")
     parentJob = group(dmci_dist_ingest_task.s(file, action,
                                               call_distributors)
                       for file in parent_mmds)()
+
     self.parentJob = parentJob
+    logger.debug(type(parentJob))
 
     pcount = 0
     while parentJob.waiting():
@@ -212,9 +215,12 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                           meta={'current': parentJob.completed_count(), 'total': total,
                                 'status': 'Processing parents',
                                 'parent_job_id': parentJob.id})
+        sleep(5)
 
     current += pcount
-
+    # if parentJob.ready():
+    #     for task in parentJob.children:
+    #         _recurse_results(task)
     """Update fileList remove ingested parents"""
     for parent in parent_mmds:
         fileList.remove(parent)
@@ -234,9 +240,12 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                                 'status': 'Processing MMD files',
                                 'parent_job_id': parentJob.id,
                                 'mmd_job_id': mmdJob.id})
+        sleep(5)
 
     current = mmdJob.completed_count() + pcount
-
+    # if mmdJob.ready():
+    #     for task in mmdJob.children:
+    #         _recurse_results(task)
     # End time taking.
     et = time.perf_counter()
     pet = time.process_time()
@@ -425,6 +434,11 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
 
     # logger.debug("Woreker result: %s", failed_dict)
 
+    # return {"status": status,
+    #         "mmd_path": mmd_path,
+    #         "message": msg}
+    if status is False:
+        logger.error("Error processing %s, reason: %s", mmd_path, msg)
     return (status, mmd_path, msg)
 
 
@@ -508,6 +522,23 @@ def dmci_ingest(dmci_url, mmd, action):
                      url, e)
 
     return response.status_code, response.text
+
+
+def _recurse_results(tasks):
+    """recursive task result loop function function"""
+    for task in tasks:
+        if isinstance(task, GroupResult):
+            if task.successful():
+                status, file, msg = task.get()
+                # logger.debug("%s: %s: %s", status, file, msg)
+        elif isinstance(task, ResultBase):
+            if task.successful():
+                status, file, msg = task.get()
+                # logger.debug("%s: %s: %s", status, file, msg)
+        elif isinstance(task, list):
+            _recurse_results(task)
+        else:
+            pass
 
 
 def main(archive_path, dmci_url, parent_uuid_list):
