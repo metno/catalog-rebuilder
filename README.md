@@ -39,6 +39,7 @@ The package reads the following additional environment variables.
 * `/status` - Show Catalog Integrity Status
 * `/admin` - Admin endpoint for cleaning the backends and rebuilding the catalog
 * `/rebuild/result`- This endpoint will give back a JSON-object with the result of the ingestion
+* `/rebuild/report`- This endpoint will give back a downloadable json file with report of the last rebuild job.
 * `/dmci/rejected` - Inspect the contents of the DMCI rejected jobs
 * `/dmci/workdir` - Inspect the distributor cache workdir
   

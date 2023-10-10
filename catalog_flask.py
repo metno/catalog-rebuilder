@@ -145,17 +145,17 @@ class AdminApp(Flask):
 
             """ Get CSW records"""
             if catalogStatus['csw'] == 0:
-                csw_records = csw_getCount(self.csw_connection)
+                csw_records = csw_getCount(_get_pg_connection())
             else:
                 csw_records = catalogStatus['csw']
 
             if catalogStatus['csw-marked-parents'] == 0:
-                csw_parent_count = csw_getParentCount(self.csw_connection)
+                csw_parent_count = csw_getParentCount(_get_pg_connection())
             else:
                 csw_parent_count = catalogStatus['csw-marked-parents']
 
             if catalogStatus['csw-distinct-parents'] == 0:
-                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(_get_pg_connection())
             else:
                 csw_distinct_parent_ids = catalogStatus['csw-distinct-parents']
 
@@ -173,7 +173,7 @@ class AdminApp(Flask):
             else:
                 solr_parent_unique = catalogStatus['solr-unique-parents']
 
-            # self.csw_connection.close()
+            self.csw_connection.close()
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -212,17 +212,17 @@ class AdminApp(Flask):
             """ Get CSW records and SolR docs"""
             """ Get CSW records"""
             if catalogStatus['csw'] == 0:
-                csw_records = csw_getCount(self.csw_connection)
+                csw_records = csw_getCount(_get_pg_connection())
             else:
                 csw_records = catalogStatus['csw']
 
             if catalogStatus['csw-marked-parents'] == 0:
-                csw_parent_count = csw_getParentCount(self.csw_connection)
+                csw_parent_count = csw_getParentCount(_get_pg_connection())
             else:
                 csw_parent_count = catalogStatus['csw-marked-parents']
 
             if catalogStatus['csw-distinct-parents'] == 0:
-                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(_get_pg_connection())
             else:
                 csw_distinct_parent_ids = catalogStatus['csw-distinct-parents']
 
@@ -422,7 +422,8 @@ class AdminApp(Flask):
             # except Exception:
             #     return jsonify({})
             # return jsonify(res_dict)
-            return send_from_directory(self._conf.report_path, 'rebuild-report.json', as_attachment=True)
+            return send_from_directory(self._conf.report_path,
+                                       'rebuild-report.json', as_attachment=True)
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
@@ -482,7 +483,7 @@ class AdminApp(Flask):
                         'total': 1,
                         'status': str(task.info),  # this is the exception raised
                     }
-                    #
+                logger.debug(response)
                 return jsonify(response)
 
         def _get_pg_connection():
@@ -562,9 +563,9 @@ class AdminApp(Flask):
                 archive_files = _get_archive_files_count()
                 parent_uuid_list = _get_parent_uuid_list_count()
                 """ Get CSW records"""
-                csw_records = csw_getCount(self.csw_connection)
-                csw_parent_count = csw_getParentCount(self.csw_connection)
-                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+                csw_records = csw_getCount(_get_pg_connection())
+                csw_parent_count = csw_getParentCount(_get_pg_connection())
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(_get_pg_connection())
 
                 solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                           self.solr_auth)

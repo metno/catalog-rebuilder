@@ -68,7 +68,7 @@ logger = get_task_logger(__name__)
 # stream_handler.setFormatter(formatter)
 # logger.addHandler(stream_handler)
 logging.getLogger('solrindexer').setLevel(logging.WARNING)
-logging.getLogger('dmci').setLevel(logging.DEBUG)
+logging.getLogger('dmci').setLevel(logging.INFO)
 # logging.getLogger('pysolr').setLevel(logging.INFO)
 
 """Initialize Solr Connection object"""
