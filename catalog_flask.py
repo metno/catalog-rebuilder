@@ -32,13 +32,14 @@ from catalog_tools import countParentUUIDList, csw_getParentCount, csw_getDistin
 from catalog_tools import get_solrParentCount, get_unique_parent_refs
 
 from flask import Flask, render_template, request, url_for, redirect, jsonify
+from flask import send_from_directory
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from requests.auth import HTTPBasicAuth as BasicAuth
 from solrindexer import IndexMMD
 
 from celery.result import GroupResult, ResultBase, AsyncResult
-from main import CONFIG, jobdata, resultData
+from main import CONFIG, jobdata, resultData, catalogStatus
 
 """Initialize logging"""
 logger = logging.getLogger(__name__)
@@ -91,12 +92,13 @@ class AdminApp(Flask):
         """Read CSW CONFIG """
         self.csw_username = os.environ.get("PG_CSW_USERNAME", CONFIG.csw_postgis_user)
         self.csw_password = os.environ.get("PG_CSW_PASSWORD", CONFIG.csw_postgis_password)
-        self.pg_port = os.environ.get("PG_CSW_PORT", 5432)
+        self.pg_port = os.environ.get("PG_CSW_PORT", CONFIG.csw_postgis_port)
         # db_url = "postgis-operator"
         self.db_url = os.environ.get("PG_CSW_DB_URL", CONFIG.csw_postgis_host)
         # logger.info("Connectiong to pycsw postgis: %s", db_url)
         self.csw_connection = None
         self.solr_auth = None
+
         """Solr connection"""
         if self._conf.solr_username is not None and self._conf.solr_password is not None:
             self.solr_auth = BasicAuth(self._conf.solr_username, self._conf.solr_password)
@@ -124,23 +126,54 @@ class AdminApp(Flask):
             self.csw_connection = _get_pg_connection()
             self.csw_connection.autocommit = True
             logger.debug(self.template_folder)
-            archive_files = _get_archive_files_count()
+            # Start background thread for updating catalog integrity information
+            """Start background daemon collection results"""
+            catalogDaemon = Thread(target=catalog_status)
+            catalogDaemon.daemon = True
+            catalogDaemon.start()
+            if catalogStatus['archive'] == 0:
+                archive_files = _get_archive_files_count()
+            else:
+                archive_files = catalogStatus['archive']
+
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
-            parent_uuid_list = _get_parent_uuid_list_count()
+            if catalogStatus['parent-uuid-list'] == 0:
+                parent_uuid_list = _get_parent_uuid_list_count()
+            else:
+                parent_uuid_list = catalogStatus['parent-uuid-list']
+
             """ Get CSW records"""
-            csw_records = csw_getCount(self.csw_connection)
-            csw_parent_count = csw_getParentCount(self.csw_connection)
-            csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+            if catalogStatus['csw'] == 0:
+                csw_records = csw_getCount(self.csw_connection)
+            else:
+                csw_records = catalogStatus['csw']
+
+            if catalogStatus['csw-marked-parents'] == 0:
+                csw_parent_count = csw_getParentCount(self.csw_connection)
+            else:
+                csw_parent_count = catalogStatus['csw-marked-parents']
+
+            if catalogStatus['csw-distinct-parents'] == 0:
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+            else:
+                csw_distinct_parent_ids = catalogStatus['csw-distinct-parents']
 
             solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                       self.solr_auth)
-            solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
-                                                       self.solr_auth)
-            solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
-                                                              self.solr_auth)
+            if catalogStatus['solr-marked-parents'] == 0:
+                solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                           self.solr_auth)
+            else:
+                solr_parent_count = catalogStatus['solr-marked-parents']
 
-            self.csw_connection.close()
+            if catalogStatus['solr-unique-parents'] == 0:
+                solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                                  self.solr_auth)
+            else:
+                solr_parent_unique = catalogStatus['solr-unique-parents']
+
+            # self.csw_connection.close()
             return render_template("status.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -165,23 +198,47 @@ class AdminApp(Flask):
             self.csw_connection = _get_pg_connection()
             self.csw_connection.autocommit = True
             """Get DMCI info"""
-            archive_files = _get_archive_files_count()
+            if catalogStatus['archive'] == 0:
+                archive_files = _get_archive_files_count()
+            else:
+                archive_files = catalogStatus['archive']
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
-            parent_uuid_list = _get_parent_uuid_list_count()
+            if catalogStatus['parent-uuid-list'] == 0:
+                parent_uuid_list = _get_parent_uuid_list_count()
+            else:
+                parent_uuid_list = catalogStatus['parent-uuid-list']
 
             """ Get CSW records and SolR docs"""
             """ Get CSW records"""
-            csw_records = csw_getCount(self.csw_connection)
-            csw_parent_count = csw_getParentCount(self.csw_connection)
-            csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+            if catalogStatus['csw'] == 0:
+                csw_records = csw_getCount(self.csw_connection)
+            else:
+                csw_records = catalogStatus['csw']
+
+            if catalogStatus['csw-marked-parents'] == 0:
+                csw_parent_count = csw_getParentCount(self.csw_connection)
+            else:
+                csw_parent_count = catalogStatus['csw-marked-parents']
+
+            if catalogStatus['csw-distinct-parents'] == 0:
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+            else:
+                csw_distinct_parent_ids = catalogStatus['csw-distinct-parents']
 
             solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                       self.solr_auth)
-            solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
-                                                       self.solr_auth)
-            solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
-                                                              self.solr_auth)
+            if catalogStatus['solr-marked-parents'] == 0:
+                solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                           self.solr_auth)
+            else:
+                solr_parent_count = catalogStatus['solr-marked-parents']
+
+            if catalogStatus['solr-unique-parents'] == 0:
+                solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                                  self.solr_auth)
+            else:
+                solr_parent_unique = catalogStatus['solr-unique-parents']
             if jobdata['current_task_id'] is not None:
                 task = rebuild_task.AsyncResult(jobdata['current_task_id'])
                 logger.debug(task.state)
@@ -190,7 +247,7 @@ class AdminApp(Flask):
                     jobdata['previous_task_status'] += " : " + str(task.info)
                     # jobdata['current_task_id'] = None
 
-            self.csw_connection.close()
+            # self.csw_connection.close()
             return render_template("admin.html",
                                    archive_files=archive_files,
                                    csw_records=csw_records,
@@ -359,12 +416,13 @@ class AdminApp(Flask):
 
         @self.route('/rebuild/report')
         def rebuild_report():
-            try:
-                data = open('/repo/rebuild-report.json').read()
-                res_dict = json.loads(data)
-            except Exception:
-                return jsonify({})
-            return jsonify(res_dict)
+            # try:
+            #     data = open('/repo/rebuild-report.json').read()
+            #     res_dict = json.loads(data)
+            # except Exception:
+            #     return jsonify({})
+            # return jsonify(res_dict)
+            return send_from_directory(self._conf.report_path, 'rebuild-report.json', as_attachment=True)
 
         @self.route('/status/<task_id>')
         def rebuild_taskstatus(task_id):
@@ -493,8 +551,43 @@ class AdminApp(Flask):
                 else:
                     pass
 
+        def catalog_status():
+            """Function executed by daemon thread.
+            Regulary check the catalog integrity"""
+            while True:
+                logger.debug("Collecting catalog integrity...")
+                self.csw_connection = _get_pg_connection()
+                self.csw_connection.autocommit = True
+                logger.debug(self.template_folder)
+                archive_files = _get_archive_files_count()
+                parent_uuid_list = _get_parent_uuid_list_count()
+                """ Get CSW records"""
+                csw_records = csw_getCount(self.csw_connection)
+                csw_parent_count = csw_getParentCount(self.csw_connection)
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(self.csw_connection)
+
+                solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
+                                                          self.solr_auth)
+                solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                           self.solr_auth)
+                solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                                  self.solr_auth)
+
+                catalogStatus['archive'] = archive_files
+                catalogStatus['csw'] = csw_records
+                catalogStatus['solr'] = solr_docs
+                catalogStatus['solr-current'] = solr_current
+                catalogStatus['parent-uuid-list'] = parent_uuid_list
+                catalogStatus['csw-marked-parents'] = csw_parent_count
+                catalogStatus['csw-distinct-parents'] = csw_distinct_parent_ids
+                catalogStatus['solr-marked-parents'] = solr_parent_count
+                catalogStatus['solr-unique-parents'] = solr_parent_unique
+                self.csw_connection.close()
+                sleep(15)
+
         def process_results():
-            """Process task results as they are completed"""
+            """Process task results as they are completed
+            Run as daemon thread"""
             # result_dict = dict()
             results_processed = False
             while True:
@@ -518,6 +611,7 @@ class AdminApp(Flask):
 
                 except Exception:
                     logger.info("No running  main task...waiting...")
+                    sleep(30)
                     pass
                 if task is not None:
                     parentJobId = None
@@ -577,6 +671,15 @@ class AdminApp(Flask):
                         jobdata['last_rebuild_info'] = task.info.get('status', '')
                         results_processed = True
                         # logger.debug(resultData)
+                        if task is not None:
+                            try:
+                                jobdata['current'] = task.info.get('current', 0),
+                                jobdata['total'] = task.info.get('total', 1),
+                                jobdata['status'] = task.info.get('status', '')
+                                jobdata['state'] = task.state
+                                jobdata['failed'] = len(dict(resultData))
+                            except Exception:
+                                pass
                         task.forget()
                         task = None
                         resultReport = {}
@@ -586,7 +689,8 @@ class AdminApp(Flask):
                         # for item in json_obj:
                         #     for key, value in item:
                         #         item[key] = value.strip()
-                        with open(os.path.join("/repo/", "rebuild-report.json"), "w") as final:
+                        with open(os.path.join(self._conf.report_path,
+                                               "rebuild-report.json"), "w") as final:
                             final.write(json_obj)
                         jobdata['current_task_id'] = None
 
@@ -595,7 +699,7 @@ class AdminApp(Flask):
                                  task.id, task.state)
                 else:
                     logger.debug("Sleeeping and check for new job")
-                sleep(10)
+                sleep(15)
                 logger.debug("End while")
             # if task.successful():
             #     # logger.debug(task.children)

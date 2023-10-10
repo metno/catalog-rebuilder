@@ -41,6 +41,17 @@ jobdata['last_rebuild_info'] = None
 
 resultData = Manager().dict()
 
+catalogStatus = Manager().dict()
+catalogStatus['archive'] = 0
+catalogStatus['csw'] = 0
+catalogStatus['solr'] = 0
+catalogStatus['solr-current'] = None
+catalogStatus['parent-uuid-list'] = 0
+catalogStatus['csw-marked-parents'] = 0
+catalogStatus['csw-distinct-parents'] = 0
+catalogStatus['solr-marked-parents'] = 0
+catalogStatus['solr-unique-parents'] = 0
+
 
 # # App Initialization
 # def initialize():
@@ -59,7 +70,9 @@ class CRConfig(Config):
 
         # Catalog rebuilder specific configuration
         self.csw_postgis_host = None  # The url/hostname for the postgis-server
+        self.csw_postgis_port = 5432  # The user credentials for the postgis-server
         self.csw_postgis_user = None  # The user credentials for the postgis-server
+
         self.csw_postgis_password = None  # The password credentials for the postgis-server
 
         self.mmd_repo_path = None  # Where to clone/pull the MMD repo used for rebuilding
@@ -70,6 +83,8 @@ class CRConfig(Config):
         self.redis_broker = None  # Url for redis-broker
 
         self.browsepy_base_dir = None  # Start dir for browsepy
+
+        self.report_path = '/repo/'
         return
 
     def readConfig(self, configFile=None):
@@ -77,6 +92,7 @@ class CRConfig(Config):
         """Read config values under 'catalog-rebuilder'."""
         conf = self._raw_conf.get("catalog-rebuilder", {})
         self.csw_postgis_host = conf.get("csw_postgis_host", self.csw_postgis_host)
+        self.csw_postgis_port = conf.get("csw_postgis_port", self.csw_postgis_port)
         self.csw_postgis_user = conf.get("csw_postgis_user", self.csw_postgis_user)
         self.csw_postgis_password = conf.get("csw_postgis_password", self.csw_postgis_password)
 
@@ -93,6 +109,8 @@ class CRConfig(Config):
         self.redis_broker = conf.get("redis_broker", self.redis_broker)
 
         self.browsepy_base_dir = conf.get("browsepy_base_dir", self.browsepy_base_dir)
+
+        self.report_path = conf.get('report_path', self.report_path)
         return valid
 
 

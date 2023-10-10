@@ -165,7 +165,10 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     self.update_state(state='PENDING',
                       meta={'current': 0, 'total': 1,
                             'status': 'Cloning MMD repo, and reading filenames.'})
-    cloneRepo()
+
+    skip_clone = os.environ.get("SKIP_REPO_CLONE", False)
+    if skip_clone is False:
+        cloneRepo()
     # index_archive = os.environ.get("INDEX_ARCHIVE", None)
     # if index_archive is not None:
     #    INDEX_ARCHIVE = index_archive
