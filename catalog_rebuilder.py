@@ -134,7 +134,8 @@ app.conf.update(task_serializer='json',
                 result_serializer='json',
                 timezone='Europe/Oslo',
                 enable_utc=True,
-                broker_connection_retry_on_startup=True
+                broker_connection_retry_on_startup=True,
+                result_expires=43200
                 )
 
 
