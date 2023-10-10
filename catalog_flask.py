@@ -690,9 +690,12 @@ class AdminApp(Flask):
                         # for item in json_obj:
                         #     for key, value in item:
                         #         item[key] = value.strip()
+                        logger.debug("Writing report file to %s",
+                                     self._conf.report_path+'/rebuild-report.json')
                         with open(os.path.join(self._conf.report_path,
                                                "rebuild-report.json"), "w") as final:
                             final.write(json_obj)
+                        logger.debug("File written...")
                         jobdata['current_task_id'] = None
 
                 if task is not None:
