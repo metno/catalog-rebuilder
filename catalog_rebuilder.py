@@ -24,6 +24,7 @@ import os
 import fnmatch
 import sys
 import time
+import shutil
 from lxml import etree
 from pathlib import Path
 from time import sleep
@@ -280,8 +281,8 @@ def cloneRepo():
     if not os.path.exists(destination_path):
         clone_command = "git clone " + mmd_repo + " " + destination_path
     else:
-        pushd_command = "cd " + destination_path + '; '
-        clone_command = pushd_command + "git pull origin master"
+        clone_command = "git clone " + mmd_repo + " " + destination_path
+        shutil.rmtree(destination_path)
         logger.debug(clone_command)
     os.system(clone_command)
 
