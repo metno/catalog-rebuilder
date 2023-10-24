@@ -71,7 +71,12 @@ def csw_truncateRecords(connection):
 
 def rejected_delete(folder):
     try:
-        [f.unlink() for f in Path(folder).glob("*") if f.is_file()]
+        [f.unlink() for f in Path(folder).glob("*.xml") if f.is_file()]
+    except Exception as e:
+        logger.error("Failed to delete files: %s", e)
+        return False, e
+    try:
+        [f.unlink() for f in Path(folder).glob("*.txt") if f.is_file()]
     except Exception as e:
         logger.error("Failed to delete files: %s", e)
         return False, e
