@@ -61,8 +61,8 @@ def csw_truncateRecords(connection):
     try:
         cur = connection.cursor()
         cur.execute("""TRUNCATE TABLE RECORDS""")
-        cur.close()
         connection.commit()
+        cur.close()
         # result = cur.fetchall()
         return True, "OK"
     except Exception as e:
