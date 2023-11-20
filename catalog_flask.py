@@ -665,9 +665,13 @@ class AdminApp(Flask):
                             if isinstance(ingest_task, GroupResult):
                                 for t in ingest_task.children:
                                     # logger.debug(t.get())
-                                    status, file, msg = t.get()
-                                    if status is False:
-                                        resultData.update({file: msg})
+                                    try:
+                                        status, file, msg = t.get()
+                                        if status is False:
+                                            resultData.update({file: msg})
+                                    except Exception as e:
+                                        logger.error("Failed to get job result from redis: %s", e)
+                                        pass
                         # jobdata['results'] = result_dict
                         jobdata['last_rebuild_info'] = task.info.get('status', '')
                         results_processed = True
