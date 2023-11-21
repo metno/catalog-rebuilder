@@ -221,7 +221,10 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                                 'status': 'Processing parents',
                                 'parent_job_id': parentJob.id})
         sleep(5)
+    while not parentJob.ready():
+        sleep(5)
 
+    pcount = parentJob.completed_count()
     current += pcount
     # if parentJob.ready():
     #     for task in parentJob.children:
@@ -246,7 +249,8 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
                                 'parent_job_id': parentJob.id,
                                 'mmd_job_id': mmdJob.id})
         sleep(5)
-
+    while not mmdJob.ready():
+        sleep(5)
     current = mmdJob.completed_count() + pcount
     # if mmdJob.ready():
     #     for task in mmdJob.children:
@@ -259,7 +263,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.info('Execution time: %s', time.strftime(
         "%H:%M:%S", time.gmtime(elapsed_time)))
     logger.info('CPU time: %s', time.strftime("%H:%M:%S", time.gmtime(pelt)))
-    job_time = time.strftime("%H:%M:%S", time.gmtime(pelt))
+    job_time = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
     self.update_state(state='SUCCESS',
                       meta={'current': current, 'total': total,
                             'status': 'Catalog rebuilding completed in {0}'.format(job_time)}
