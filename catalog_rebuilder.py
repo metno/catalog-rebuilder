@@ -201,7 +201,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
 
     # Wait a bit to be sure the dmci-catalog-rebuilder is up and running
     logger.info("Sleeping for one minute to make sure sidecar is running.")
-
+    time.sleep(60)
     logger.info("Starting catalog rebuilding....")
 
     """First we ingest the parents."""
@@ -236,7 +236,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     self.update_state(state='PROGRESS',
                       meta={'current': current, 'total': total,
                             'status': 'Processing MMD files'})
-
+    time.sleep(650)
     """Then we ingest all other datasets"""
     mmdJob = group(dmci_dist_ingest_task.s(file, action, call_distributors)
                    for file in fileList)()
