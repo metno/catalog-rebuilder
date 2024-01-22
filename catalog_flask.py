@@ -175,7 +175,7 @@ class AdminApp(Flask):
 
             self.csw_connection.close()
             return render_template("status.html",
-                                   archive_files=archive_files,
+                                   archive_files=0,
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
@@ -249,7 +249,7 @@ class AdminApp(Flask):
 
             # self.csw_connection.close()
             return render_template("admin.html",
-                                   archive_files=archive_files,
+                                   archive_files=0,
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
@@ -574,7 +574,7 @@ class AdminApp(Flask):
                 solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
                                                                   self.solr_auth)
 
-                catalogStatus['archive'] = archive_files
+                catalogStatus['archive'] = 0
                 catalogStatus['csw'] = csw_records
                 catalogStatus['solr'] = solr_docs
                 catalogStatus['solr-current'] = solr_current
