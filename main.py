@@ -102,9 +102,10 @@ class CRConfig(Config):
         self.mmd_repo_password = conf.get("mmd_repo_password", self.mmd_repo_password)
 
         "Process mmd repo url add credentials to string"
-        mmd_url = re.sub('%u', self.mmd_repo_user, self.mmd_repo_url)
-        mmd_url = re.sub('%p', self.mmd_repo_password, mmd_url)
-        self.mmd_repo_url = mmd_url
+        if self.mmd_repo_user is not None and seld.mmd_repo_password is not None:
+            mmd_url = re.sub('%u', self.mmd_repo_user, self.mmd_repo_url)
+            mmd_url = re.sub('%p', self.mmd_repo_password, mmd_url)
+            self.mmd_repo_url = mmd_url
 
         self.redis_broker = conf.get("redis_broker", self.redis_broker)
 
