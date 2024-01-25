@@ -4,7 +4,7 @@ RUN mkdir /app
 
 ARG GUNICORN_VERSION="~=20.1"
 ARG MMD_REPO=https://github.com/metno/mmd
-ARG MMD_VERSION=v3.5
+ARG MMD_VERSION=v3.5.1
 
 WORKDIR /tmp
 
