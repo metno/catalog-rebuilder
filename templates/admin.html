@@ -89,9 +89,12 @@
       </form>
     </tr>
     <tr>
+      <form action="{{ url_for('clean_workdir')}}" method="POST" onsubmit="return deleteWorkdir();">
       <td>Distributor cache (workdir): </td>
       <td>{{ workdir_files }}</td>
-      </td>
+      <td><input id="clean-workdir" type="submit" name="submit" value="Clean Workdir folder"></td>
+    </form>
+    </td>
     </tr>
   </table>
 
@@ -247,8 +250,41 @@
       });
     }
 
+    function clean_workdir() {
+      // add task status elements
+      div = $('<div class="progress"><div></div><div>0%</div><div>...</div><div>&nbsp;</div></div><hr>');
+      $('#progress').append(div);
+
+      // create a progress bar
+      var nanobar = new Nanobar({
+        bg: '#44f',
+        target: div[0].childNodes[0]
+      });
+
+      // send ajax POST request to start background job
+      $.ajax({
+        type: 'POST',
+        url: '/rebuild',
+        success: function (data, status, request) {
+          status_url = request.getResponseHeader('Location');
+          update_progress(status_url, nanobar, div[0]);
+          window.location = '/admin'
+        },
+        error: function () {
+          alert('Unexpected error');
+        }
+      });
+    }
+
     function deleteRejected() {
       if (confirm("Are you sure you wish to delete all rejected files?") == false) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+    function deleteWorkdir() {
+      if (confirm("Are you sure you wish to delete all workdir files?") == false) {
         return false;
       } else {
         return true;
