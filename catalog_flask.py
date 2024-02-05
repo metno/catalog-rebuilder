@@ -131,10 +131,10 @@ class AdminApp(Flask):
             catalogDaemon = Thread(target=catalog_status)
             catalogDaemon.daemon = True
             catalogDaemon.start()
-            # if catalogStatus['archive'] == 0:
-            #    archive_files = _get_archive_files_count()
-            # else:
-            #    archive_files = catalogStatus['archive']
+            if catalogStatus['archive'] == 0:
+               archive_files = _get_archive_files_count()
+            else:
+               archive_files = catalogStatus['archive']
 
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
@@ -175,7 +175,7 @@ class AdminApp(Flask):
 
             self.csw_connection.close()
             return render_template("status.html",
-                                   archive_files=0,
+                                   archive_files=archive_files,
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
@@ -198,10 +198,10 @@ class AdminApp(Flask):
             self.csw_connection = _get_pg_connection()
             self.csw_connection.autocommit = True
             """Get DMCI info"""
-            # if catalogStatus['archive'] == 0:
-            #    archive_files = _get_archive_files_count()
-            # else:
-            #    archive_files = catalogStatus['archive']
+            if catalogStatus['archive'] == 0:
+               archive_files = _get_archive_files_count()
+            else:
+               archive_files = catalogStatus['archive']
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
             if catalogStatus['parent-uuid-list'] == 0:
@@ -249,7 +249,7 @@ class AdminApp(Flask):
 
             # self.csw_connection.close()
             return render_template("admin.html",
-                                   archive_files=0,
+                                   archive_files=archive_files,
                                    csw_records=csw_records,
                                    solr_docs=solr_docs,
                                    solr_current=solr_current,
@@ -560,7 +560,7 @@ class AdminApp(Flask):
                 self.csw_connection = _get_pg_connection()
                 self.csw_connection.autocommit = True
                 logger.debug(self.template_folder)
-                # archive_files = _get_archive_files_count()
+                archive_files = _get_archive_files_count()
                 parent_uuid_list = _get_parent_uuid_list_count()
                 """ Get CSW records"""
                 csw_records = csw_getCount(_get_pg_connection())
