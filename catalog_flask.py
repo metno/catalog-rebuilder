@@ -19,6 +19,7 @@ limitations under the License.
 import os
 import sys
 import json
+import shutil
 import logging
 import psycopg2
 from time import sleep
@@ -32,7 +33,7 @@ from catalog_tools import countParentUUIDList, csw_getParentCount, csw_getDistin
 from catalog_tools import get_solrParentCount, get_unique_parent_refs
 
 from flask import Flask, render_template, request, url_for, redirect, jsonify
-from flask import send_from_directory
+from flask import send_from_directory, make_response
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from requests.auth import HTTPBasicAuth as BasicAuth
@@ -485,6 +486,108 @@ class AdminApp(Flask):
                     }
                 logger.debug(response)
                 return jsonify(response)
+        
+        @self.route('/metrics')
+        def metrics():
+            self.csw_connection = _get_pg_connection()
+            self.csw_connection.autocommit = True
+            logger.debug(self.template_folder)
+            # Start background thread for updating catalog integrity information
+            """Start background daemon collection results"""
+            catalogDaemon = Thread(target=catalog_status)
+            catalogDaemon.daemon = True
+            catalogDaemon.start()
+            if catalogStatus['archive'] == 0:
+               archive_files = _get_archive_files_count()
+            else:
+               archive_files = catalogStatus['archive']
+
+            rejected_files = _get_rejected_files_count()
+            workdir_files = _get_workdir_files_count()
+            if catalogStatus['parent-uuid-list'] == 0:
+                parent_uuid_list = _get_parent_uuid_list_count()
+            else:
+                parent_uuid_list = catalogStatus['parent-uuid-list']
+
+            """ Get CSW records"""
+            if catalogStatus['csw'] == 0:
+                csw_records = csw_getCount(_get_pg_connection())
+            else:
+                csw_records = catalogStatus['csw']
+
+            if catalogStatus['csw-marked-parents'] == 0:
+                csw_parent_count = csw_getParentCount(_get_pg_connection())
+            else:
+                csw_parent_count = catalogStatus['csw-marked-parents']
+
+            if catalogStatus['csw-distinct-parents'] == 0:
+                csw_distinct_parent_ids = csw_getDistinctParentsCount(_get_pg_connection())
+            else:
+                csw_distinct_parent_ids = catalogStatus['csw-distinct-parents']
+
+            solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
+                                                      self.solr_auth)
+            if catalogStatus['solr-marked-parents'] == 0:
+                solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
+                                                           self.solr_auth)
+            else:
+                solr_parent_count = catalogStatus['solr-marked-parents']
+
+            if catalogStatus['solr-unique-parents'] == 0:
+                solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
+                                                                  self.solr_auth)
+            else:
+                solr_parent_unique = catalogStatus['solr-unique-parents']
+
+            self.csw_connection.close()
+            
+            dmci_disk_usage = shutil.disk_usage(self._conf.file_archive_path)
+            # Generate the metrics output
+            metrics = ''
+            metrics += '# HELP archive_files Total number of mmd files in archive repository\n'
+            metrics += '# TYPE archive_files counter\n'
+            metrics += 'archive_files %d\n' % archive_files
+            metrics += '# HELP csw_records Total number of records files in csw database\n'
+            metrics += '# TYPE csw_records counter\n'
+            metrics += 'csw_records %d\n' % csw_records
+            metrics += '# HELP solr_docs Total number of documents in solr index\n'
+            metrics += '# TYPE solr_docs counter\n'
+            metrics += 'solr_docs %d\n' % solr_docs
+            metrics += '# HELP rejected_files Total number of mmd files rejected by dmci\n'
+            metrics += '# TYPE rejected_files counter\n'
+            metrics += 'rejected_files %d\n' % rejected_files
+            metrics += '# HELP workdir_files Total number of mmd files in distributor cache\n'
+            metrics += '# TYPE workdir_files counter\n'
+            metrics += 'workdir_files %d\n' % workdir_files
+            metrics += '# HELP parent_uuid_list Total number of parent identifiers in parent-uuid-list.xml\n'
+            metrics += '# TYPE parent_uuid_list counter\n'
+            metrics += 'parent_uuid_list %d\n' % parent_uuid_list
+            metrics += '# HELP csw_parent_count Total number of parents registered in csw\n'
+            metrics += '# TYPE csw_parent_count counter\n'
+            metrics += 'csw_parent_count %d\n' % csw_parent_count
+            metrics += '# HELP csw_distinct_parent_ids Total number of distinct parent identifiers in csw\n'
+            metrics += '# TYPE csw_distinct_parent_ids counter\n'
+            metrics += 'csw_distinct_parent_ids %d\n' % csw_distinct_parent_ids
+            metrics += '# HELP solr_parent_count Total number of parents registered in solr\n'
+            metrics += '# TYPE solr_parent_count counter\n'
+            metrics += 'solr_parent_count %d\n' % solr_parent_count
+            metrics += '# HELP solr_parent_unique Total number of unique parent identifiers in solr\n'
+            metrics += '# TYPE solr_parent_unique counter\n'
+            metrics += 'solr_parent_unique %d\n' % solr_parent_unique
+            metrics += '# HELP dmci_disk_usage_total Total disk space in bytes dmci-data\n'
+            metrics += '# TYPE dmci_disk_usage_total gauge\n'
+            metrics += 'dmci_disk_usage_total %s\n' % dmci_disk_usage.total
+            metrics += '# HELP dmci_disk_usage_used Used disk space in bytes dmci-data\n'
+            metrics += '# TYPE dmci_disk_usage_used gauge\n'
+            metrics += 'dmci_disk_usage_used %s\n' % dmci_disk_usage.used
+            metrics += '# HELP dmci_disk_usage_free Free disk space in bytes dmci-data\n'
+            metrics += '# TYPE dmci_disk_usage_free gauge\n'
+            metrics += 'dmci_disk_usage_free %s\n' % dmci_disk_usage.free
+            
+            response = make_response(metrics, 200)
+            response.mimetype = "text/plain"
+            return response
+
 
         def _get_pg_connection():
             conn = psycopg2.connect(host=self.db_url,

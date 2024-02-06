@@ -1,9 +1,12 @@
 stages:
   - build
   - release
+
+# git rev-parse --short HEAD
+    
 variables:
   catalog_rebuilder_version: main
-
+    
 build container:
   stage: build
   script:
