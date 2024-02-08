@@ -129,13 +129,16 @@ class AdminApp(Flask):
             logger.debug(self.template_folder)
             # Start background thread for updating catalog integrity information
             """Start background daemon collection results"""
-            catalogDaemon = Thread(target=catalog_status)
-            catalogDaemon.daemon = True
-            catalogDaemon.start()
+            if catalogStatus['running'] is None:
+                logger.info("Catalog status thread not running. Starting thread")
+                catalogDaemon = Thread(target=catalog_status, name="status")
+                catalogDaemon.daemon = True
+                catalogDaemon.start()
+                catalogStatus['running'] = catalogDaemon.native_id
             if catalogStatus['archive'] == 0:
-               archive_files = _get_archive_files_count()
+                archive_files = _get_archive_files_count()
             else:
-               archive_files = catalogStatus['archive']
+                archive_files = catalogStatus['archive']
 
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
@@ -200,9 +203,9 @@ class AdminApp(Flask):
             self.csw_connection.autocommit = True
             """Get DMCI info"""
             if catalogStatus['archive'] == 0:
-               archive_files = _get_archive_files_count()
+                archive_files = _get_archive_files_count()
             else:
-               archive_files = catalogStatus['archive']
+                archive_files = catalogStatus['archive']
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
             if catalogStatus['parent-uuid-list'] == 0:
@@ -354,9 +357,11 @@ class AdminApp(Flask):
                 return message + e, 500
 
             """Start background daemon collection results"""
-            resultDaemon = Thread(target=process_results)
-            resultDaemon.daemon = True
-            resultDaemon.start()
+            if jobdata['running'] is None:
+                resultDaemon = Thread(target=process_results, name="results")
+                resultDaemon.daemon = True
+                resultDaemon.start()
+                jobdata['running'] = resultDaemon.native_id
 
             """Register rebuild start date"""
             now = datetime.now()
@@ -486,7 +491,7 @@ class AdminApp(Flask):
                     }
                 logger.debug(response)
                 return jsonify(response)
-        
+
         @self.route('/metrics')
         def metrics():
             self.csw_connection = _get_pg_connection()
@@ -494,13 +499,16 @@ class AdminApp(Flask):
             logger.debug(self.template_folder)
             # Start background thread for updating catalog integrity information
             """Start background daemon collection results"""
-            catalogDaemon = Thread(target=catalog_status)
-            catalogDaemon.daemon = True
-            catalogDaemon.start()
+            if catalogStatus['running'] is None:
+                logger.info("Catalog status thread not running. Starting thread")
+                catalogDaemon = Thread(target=catalog_status, name="status")
+                catalogDaemon.daemon = True
+                catalogDaemon.start()
+                catalogStatus['running'] = catalogDaemon.native_id
             if catalogStatus['archive'] == 0:
-               archive_files = _get_archive_files_count()
+                archive_files = _get_archive_files_count()
             else:
-               archive_files = catalogStatus['archive']
+                archive_files = catalogStatus['archive']
 
             rejected_files = _get_rejected_files_count()
             workdir_files = _get_workdir_files_count()
@@ -540,7 +548,7 @@ class AdminApp(Flask):
                 solr_parent_unique = catalogStatus['solr-unique-parents']
 
             self.csw_connection.close()
-            
+
             dmci_disk_usage = shutil.disk_usage(self._conf.file_archive_path)
             # Generate the metrics output
             metrics = ''
@@ -583,11 +591,10 @@ class AdminApp(Flask):
             metrics += '# HELP dmci_disk_usage_free Free disk space in bytes dmci-data\n'
             metrics += '# TYPE dmci_disk_usage_free gauge\n'
             metrics += 'dmci_disk_usage_free %s\n' % dmci_disk_usage.free
-            
+
             response = make_response(metrics, 200)
             response.mimetype = "text/plain"
             return response
-
 
         def _get_pg_connection():
             conn = psycopg2.connect(host=self.db_url,
@@ -687,7 +694,7 @@ class AdminApp(Flask):
                 catalogStatus['solr-marked-parents'] = solr_parent_count
                 catalogStatus['solr-unique-parents'] = solr_parent_unique
                 self.csw_connection.close()
-                sleep(15)
+                sleep(25)
 
         def process_results():
             """Process task results as they are completed

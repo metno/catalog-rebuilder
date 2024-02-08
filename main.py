@@ -38,6 +38,7 @@ jobdata['failed'] = 0
 jobdata['results'] = None
 jobdata['last_rebuild'] = ''
 jobdata['last_rebuild_info'] = None
+jobdata['running'] = None
 
 resultData = Manager().dict()
 
@@ -51,6 +52,7 @@ catalogStatus['csw-marked-parents'] = 0
 catalogStatus['csw-distinct-parents'] = 0
 catalogStatus['solr-marked-parents'] = 0
 catalogStatus['solr-unique-parents'] = 0
+catalogStatus['running'] = None
 
 
 # # App Initialization
