@@ -176,5 +176,10 @@ def countParentUUIDList(uuid_list):
     doc = etree.parse(uuid_list)
     root = doc.getroot()
 
-    result = len(root.getchildren())
+    parents = []
+    for elem in root.iter():
+        if "id" == elem.tag:
+            parents.append(elem.text)
+
+    result = len(parents)
     return result

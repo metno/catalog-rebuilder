@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<parent>
+    <id>no.met:64db6102-14ce-41e9-b93b-61dbb2cb8b4e</id>
+    <id>no.met:bc82c179-144e-415a-8dd2-64d3569a8d50</id>
+    <id>no.met:da280021-13d8-425e-9783-64911d772397</id>
+    <id>no.met:d42548cc-337f-4005-91f4-a5dc306244b0</id>
+    <id>no.met:e1d0863d-71d3-4b9f-bb17-2af42d4956e7</id>
+    <id>no.met:6827f045-36c1-4678-a0bf-d91b41f8eefb</id>
+    <id>no.met:c7f8731b-5cfe-4cb5-ac57-168a19a2957b</id>
+    <id>no.met:f6cbb81c-1ce1-4080-b242-819e59cee78d</id>
+    <id>no.met:8e5ec6e8-f0ac-47cc-a869-44373c204848</id>
+    <id>no.met:e2228b20-e62f-436b-aa17-7716acfe8e3a</id>
+    <id>no.met:64636e8c-c486-4496-bdda-89687e1d8f97</id>
+    <id>no.met:3f289fcc-022b-4b62-bbbb-b001304a6e09</id>
+    <id>no.met:e95682b9-376e-49a9-a093-d399cda54336</id>
+    <id>no.met:ddb4c5d1-70b5-4d09-98a8-fadbf5e2d2ba</id>
+    <id>no.met:61b4a9bd-a97e-42e7-8d16-635535a461f6</id>
+    <id>no.met:9696eef6-ccda-4d04-b963-e9a3016f4ce2</id>
+    <id>no.met:806070da-e9f3-4d03-ba1d-26b843961634</id>
+    <id>no.met:9fbe6a04-279c-46b8-a582-bb08f4b11794</id>
+    <id>no.met:fc0974ef-8f78-406f-8c62-165f7e882212</id> <!-- meps_det_sfc -->
+    <id>no.met:0f5116ba-43dd-42b8-a0ef-1f49c4b27812</id> <!-- meps_det_pl -->
+    <id>no.met:8c94c7de-6328-4113-9e77-8f090999fab9</id> <!-- meps_det_ml -->
+    <id>no.met:1e0c1755-4ba0-4edf-ac31-46008516ff26</id> <!-- meps_det_hl -->
+</parent>
