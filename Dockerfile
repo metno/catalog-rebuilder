@@ -30,6 +30,7 @@ RUN apt-get -qqy update && \
   python3-full \
   python3-gunicorn \
   wget \
+  pipx \
   python3 \
   && rm -rf /var/lib/apt/lists/*
 
@@ -52,7 +53,7 @@ ARG CATALOG_REBUILDER_VERSION=main
 # Set to True when run container to start rebuilder job.
 ENV CATALOG_REBUILDER_ENABLED=False
 
-RUN pip install -r requirements.txt
+RUN pipx install -r requirements.txt
 
 # Default port to
 EXPOSE 5000
