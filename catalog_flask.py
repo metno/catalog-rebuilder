@@ -22,6 +22,7 @@ import json
 import shutil
 import logging
 import psycopg2
+import threading
 from time import sleep
 from threading import Thread
 from datetime import datetime
@@ -135,6 +136,16 @@ class AdminApp(Flask):
                 catalogDaemon.daemon = True
                 catalogDaemon.start()
                 catalogStatus['running'] = catalogDaemon.native_id
+
+            """Restart background daemon if it have died"""
+            if not any([th for th in threading.enumerate()
+                        if th.native_id == catalog_status['running']]):
+                catalogDaemon = Thread(target=catalog_status, name="status")
+                catalogDaemon.daemon = True
+                catalogDaemon.start()
+                catalogStatus['running'] = catalogDaemon.native_id
+                logger.debug("Restarted dead status collection daemon with new id %s",
+                             catalogDaemon.native_id)
             if catalogStatus['archive'] == 0:
                 archive_files = _get_archive_files_count()
             else:
