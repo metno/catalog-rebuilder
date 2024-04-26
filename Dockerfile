@@ -28,9 +28,9 @@ RUN apt-get -qqy update && \
   python3-pip \
   python3-wheel \
   python3-full \
+  python3-venv \
   python3-gunicorn \
   wget \
-  pipx \
   python3 \
   && rm -rf /var/lib/apt/lists/*
 
@@ -53,7 +53,12 @@ ARG CATALOG_REBUILDER_VERSION=main
 # Set to True when run container to start rebuilder job.
 ENV CATALOG_REBUILDER_ENABLED=False
 
-RUN pipx install -r requirements.txt
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+
+RUN pip install -r requirements.txt
 
 # Default port to
 EXPOSE 5000
