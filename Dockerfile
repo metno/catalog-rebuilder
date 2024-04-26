@@ -27,14 +27,14 @@ RUN apt-get -qqy update && \
   python3-lxml \
   python3-pip \
   python3-wheel \
+  python3-full \
+  python3-gunicorn \
   wget \
   python3 \
-  && rm -rf /var/lib/apt/lists/* && \
-  pip install "gunicorn${GUNICORN_VERSION}"
-
+  && rm -rf /var/lib/apt/lists/*
 
 # Download MMD and use local copy of schema (see sed command below)
-RUN git config --global advice.detachedHead false 
+RUN git config --global advice.detachedHead false
 RUN git clone --depth 1 --branch ${MMD_VERSION} ${MMD_REPO} /tmp/mmd && \
   mkdir -p /usr/share/mmd/xslt $DST/usr/share/mmd/xsd && \
   cp -a /tmp/mmd/xslt/* /usr/share/mmd/xslt && \
@@ -62,7 +62,7 @@ VOLUME /dmci
 
 # Override directory, expected to have persistent storage
 VOLUME /repo
-RUN git config --global --add safe.directory /repo 
+RUN git config --global --add safe.directory /repo
 RUN git config --global  user.name "catalog-rebuilder"
 
 VOLUME /archive
