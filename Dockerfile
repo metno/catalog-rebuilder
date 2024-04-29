@@ -33,6 +33,7 @@ RUN apt-get -qqy update && \
   wget \
   python3 \
   && rm -rf /var/lib/apt/lists/*
+  pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages
 
 # Download MMD and use local copy of schema (see sed command below)
 RUN git config --global advice.detachedHead false
@@ -53,12 +54,11 @@ ARG CATALOG_REBUILDER_VERSION=main
 # Set to True when run container to start rebuilder job.
 ENV CATALOG_REBUILDER_ENABLED=False
 
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+#ENV VIRTUAL_ENV=/opt/venv
+#RUN python3 -m venv $VIRTUAL_ENV
+#ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-RUN pip install gunicorn
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt --break-system-packages
 
 # Default port to
 EXPOSE 5000
