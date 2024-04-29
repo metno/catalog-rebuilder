@@ -27,13 +27,15 @@ RUN apt-get -qqy update && \
   python3-lxml \
   python3-pip \
   python3-wheel \
-  python3-full \
-  python3-venv \
-  python3-gunicorn \
+  #python3-full \
+  #python3-venv \
+  #python3-gunicorn \
   wget \
   python3 \
   && rm -rf /var/lib/apt/lists/* && \
-  pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages
+  pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages \
+  pip install backports.shutil_get_terminal_size --break-system-packages \
+  pip install scandir --break-system-packages
 
 # Download MMD and use local copy of schema (see sed command below)
 RUN git config --global advice.detachedHead false
