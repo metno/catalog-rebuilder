@@ -32,7 +32,7 @@ RUN apt-get -qqy update && \
   python3-gunicorn \
   wget \
   python3 \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* && \
   pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages
 
 # Download MMD and use local copy of schema (see sed command below)
