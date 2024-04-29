@@ -139,7 +139,7 @@ class AdminApp(Flask):
 
             """Restart background daemon if it have died"""
             if not any([th for th in threading.enumerate()
-                        if th.native_id == catalog_status['running']]):
+                        if th.native_id == catalogStatus['running']]):
                 catalogDaemon = Thread(target=catalog_status, name="status")
                 catalogDaemon.daemon = True
                 catalogDaemon.start()
