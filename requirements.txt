@@ -13,3 +13,4 @@ flower
 redis
 asyncio
 eventlet
+owslib
