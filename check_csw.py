@@ -55,10 +55,7 @@ def checkParents(parentList, csw_url):
             return False
         else:
             m = re.search(".*numberOfRecordsMatched\=\"(\d+)\".*", r.text)
-            if m:
-                #print(f"{parent}: Found {m.group(1)} child datasets.")
-            else:
-                #print(f"{parent}: Something may be wrong.")
+            if not m:
                 return False
     
     for ii in range(len(parentList)):
