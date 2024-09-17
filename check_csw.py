@@ -1,5 +1,5 @@
-import re 
-import requests 
+import re
+import requests
 from owslib.csw import CatalogueServiceWeb
 
 
@@ -23,26 +23,27 @@ def checkParents(parentList, csw_url):
             else:
                 isParent = False
                 return False
-            pdict = { "id": id, "title": title, "type": type, "isParent" : isParent, "status": True}
+            pdict = {"id": id, "title": title, "type": type, "isParent": isParent, "status": True}
             results[parent] = pdict
         except KeyError:
-            pdict = { "id": parent, "status": False}
+            pdict = {"id": parent, "status": False}
             results[parent] = pdict
             return False
         finally:
-            i+= 1
+            i += 1
 
     res_keys = list(results.keys())
     for key in res_keys:
         elem = results[key]
         if elem['status'] is False:
-            #print('Missing MMD parent record with id', elem['id'])
+            # print('Missing MMD parent record with id', elem['id'])
             return False
         if 'isParent' in elem:
             if elem['isParent'] is False:
-                #print('MMD with id %s have not been marked as parent (i.e type should be series, is dataset)'% elem['id'])
+                # print('MMD with id %s have not been marked as parent (i.e type should be series,
+                #  is dataset)'% elem['id'])
                 return False
-    
+
     for parent in parentList:
         url = (f"{csw_url}?SERVICE=CSW&VERSION=2.0.2&REQUEST=GetRecords&"
                "RESULTTYPE=results&TYPENAMES=csw:Record&ElementSetName=full&"
@@ -51,22 +52,20 @@ def checkParents(parentList, csw_url):
                f"apiso:ParentIdentifier%20like%20%27{parent}%27")
         r = requests.get(url)
         if r.status_code != 200 or "ExceptionReport" in r.text:
-            #print(f"{parent}: CSW search for children is failing!")
+            # print(f"{parent}: CSW search for children is failing!")
             return False
         else:
             m = re.search(".*numberOfRecordsMatched\=\"(\d+)\".*", r.text)
             if not m:
                 return False
-    
+
     for ii in range(len(parentList)):
         url = (f"{csw_url}?SERVICE=CSW&VERSION=2.0.2&REQUEST=GetRecords&RESULTTYPE=results"
-                "&TYPENAMES=csw:Record&ElementSetName=full&outputschema="
-                "http://www.isotc211.org/2005/gmd&CONSTRAINTLANGUAGE=CQL_TEXT&CONSTRAINT="
-                f"dc:type%20like%20%27series%27&startposition={ii+1}")
+               "&TYPENAMES=csw:Record&ElementSetName=full&outputschema="
+               "http://www.isotc211.org/2005/gmd&CONSTRAINTLANGUAGE=CQL_TEXT&CONSTRAINT="
+               f"dc:type%20like%20%27series%27&startposition={ii+1}")
         r = requests.get(url)
         if r.status_code != 200 or "ExceptionReport" in r.text:
-            #print(f"{parentList[ii]}: CSW search starting at index {ii+1} fails!")
+            # print(f"{parentList[ii]}: CSW search starting at index {ii+1} fails!")
             return False
     return True
-
-

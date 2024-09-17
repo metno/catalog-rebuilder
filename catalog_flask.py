@@ -31,7 +31,7 @@ from catalog_rebuilder import rebuild_task, getListOfFiles, app, dmci_dist_inges
 from catalog_tools import csw_getCount, rejected_delete, get_solrstatus
 from catalog_tools import csw_truncateRecords, get_xml_file_count
 from catalog_tools import countParentUUIDList, csw_getParentCount, csw_getDistinctParentsCount
-from catalog_tools import get_solrParentCount, get_unique_parent_refs
+from catalog_tools import get_solrParentCount, get_unique_parent_refs, createParentUUIDList
 
 from check_csw import checkParents
 
@@ -535,7 +535,7 @@ class AdminApp(Flask):
 
             """ Parents checks"""
             check_parents_result = 1
-            if checkParents(parent_uuid_list,csw_url):
+            if checkParents(_getParentList(), csw_url):
                 check_parents_result = 0
 
             """ Get CSW records"""
@@ -673,6 +673,10 @@ class AdminApp(Flask):
         def _get_parent_uuid_list_count():
             parent_list = self._conf.path_to_parent_list
             return countParentUUIDList(parent_list)
+
+        def _getParentList():
+            parent_list = self._conf.path_to_parent_list
+            return createParentUUIDList(parent_list)
 
         def _revoke_tasks(tasks):
             """recursive task revoke function"""
