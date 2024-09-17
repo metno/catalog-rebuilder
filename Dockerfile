@@ -33,8 +33,8 @@ RUN apt-get -qqy update && \
   wget \
   python3 \
   && rm -rf /var/lib/apt/lists/* && \
-  pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages \
-  pip install backports.shutil_get_terminal_size --break-system-packages \
+  pip install "gunicorn${GUNICORN_VERSION}" --break-system-packages && \
+  pip install backports.shutil_get_terminal_size --break-system-packages && \
   pip install scandir --break-system-packages
 
 # Download MMD and use local copy of schema (see sed command below)

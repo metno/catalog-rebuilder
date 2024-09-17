@@ -33,6 +33,8 @@ from catalog_tools import csw_truncateRecords, get_xml_file_count
 from catalog_tools import countParentUUIDList, csw_getParentCount, csw_getDistinctParentsCount
 from catalog_tools import get_solrParentCount, get_unique_parent_refs
 
+from check_csw import checkParents
+
 from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask import send_from_directory, make_response
 from flask_httpauth import HTTPBasicAuth
@@ -100,6 +102,9 @@ class AdminApp(Flask):
         # logger.info("Connectiong to pycsw postgis: %s", db_url)
         self.csw_connection = None
         self.solr_auth = None
+
+        """CSW URL"""
+        csw_url = self._conf.csw_service_url
 
         """Solr connection"""
         if self._conf.solr_username is not None and self._conf.solr_password is not None:
@@ -528,6 +533,11 @@ class AdminApp(Flask):
             else:
                 parent_uuid_list = catalogStatus['parent-uuid-list']
 
+            """ Parents checks"""
+            check_parents_result = 1
+            if checkParents(parent_uuid_list,csw_url):
+                check_parents_result = 0
+
             """ Get CSW records"""
             if catalogStatus['csw'] == 0:
                 csw_records = csw_getCount(_get_pg_connection())
@@ -602,6 +612,9 @@ class AdminApp(Flask):
             metrics += '# HELP dmci_disk_usage_free Free disk space in bytes dmci-data\n'
             metrics += '# TYPE dmci_disk_usage_free gauge\n'
             metrics += 'dmci_disk_usage_free %s\n' % dmci_disk_usage.free
+            metrics += '# HELP parents_checks Check that all parents exist, are of type series and have a list of children\n'
+            metrics += '# TYPE parents_checks gauge \n'
+            metrics += 'parents_checks %s\n' % check_parents_result
 
             response = make_response(metrics, 200)
             response.mimetype = "text/plain"
