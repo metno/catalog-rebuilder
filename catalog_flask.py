@@ -620,7 +620,7 @@ class AdminApp(Flask):
             metrics += 'dmci_disk_usage_free %s\n' % dmci_disk_usage.free
             metrics += '# HELP parents_checks Check that all parents exist, are of'
             metrics += ' type series and have a list of children\n'
-            metrics += '# TYPE parents_checks gauge \n'
+            metrics += '# TYPE parents_checks gauge\n'
             metrics += 'parents_checks %s\n' % check_parents_result
 
             response = make_response(metrics, 200)
