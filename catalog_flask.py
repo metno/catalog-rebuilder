@@ -533,10 +533,13 @@ class AdminApp(Flask):
             else:
                 parent_uuid_list = catalogStatus['parent-uuid-list']
 
-            """ Parents checks"""
-            check_parents_result = 1
-            if checkParents(_getParentList(), csw_url):
-                check_parents_result = 0
+            if catalogStatus['csw-parents-check'] is None:
+                """ Parents checks"""
+                check_parents_result = 1
+                if checkParents(_getParentList(), csw_url):
+                    check_parents_result = 0
+            else:
+                check_parents_result = catalogStatus['csw-parents-check']
 
             """ Get CSW records"""
             if catalogStatus['csw'] == 0:
@@ -588,19 +591,22 @@ class AdminApp(Flask):
             metrics += '# HELP workdir_files Total number of mmd files in distributor cache\n'
             metrics += '# TYPE workdir_files counter\n'
             metrics += 'workdir_files %d\n' % workdir_files
-            metrics += '# HELP parent_uuid_list Total number of parent identifiers in parent-uuid-list.xml\n'
+            metrics += '# HELP parent_uuid_list Total number of parent identifiers in'
+            metrics += ' parent-uuid-list.xml\n'
             metrics += '# TYPE parent_uuid_list counter\n'
             metrics += 'parent_uuid_list %d\n' % parent_uuid_list
             metrics += '# HELP csw_parent_count Total number of parents registered in csw\n'
             metrics += '# TYPE csw_parent_count counter\n'
             metrics += 'csw_parent_count %d\n' % csw_parent_count
-            metrics += '# HELP csw_distinct_parent_ids Total number of distinct parent identifiers in csw\n'
+            metrics += '# HELP csw_distinct_parent_ids Total number of'
+            metrics += ' distinct parent identifiers in csw\n'
             metrics += '# TYPE csw_distinct_parent_ids counter\n'
             metrics += 'csw_distinct_parent_ids %d\n' % csw_distinct_parent_ids
             metrics += '# HELP solr_parent_count Total number of parents registered in solr\n'
             metrics += '# TYPE solr_parent_count counter\n'
             metrics += 'solr_parent_count %d\n' % solr_parent_count
-            metrics += '# HELP solr_parent_unique Total number of unique parent identifiers in solr\n'
+            metrics += '# HELP solr_parent_unique Total number of unique'
+            metrics += ' parent identifiers in solr\n'
             metrics += '# TYPE solr_parent_unique counter\n'
             metrics += 'solr_parent_unique %d\n' % solr_parent_unique
             metrics += '# HELP dmci_disk_usage_total Total disk space in bytes dmci-data\n'
@@ -612,7 +618,8 @@ class AdminApp(Flask):
             metrics += '# HELP dmci_disk_usage_free Free disk space in bytes dmci-data\n'
             metrics += '# TYPE dmci_disk_usage_free gauge\n'
             metrics += 'dmci_disk_usage_free %s\n' % dmci_disk_usage.free
-            metrics += '# HELP parents_checks Check that all parents exist, are of type series and have a list of children\n'
+            metrics += '# HELP parents_checks Check that all parents exist, are of'
+            metrics += ' type series and have a list of children\n'
             metrics += '# TYPE parents_checks gauge \n'
             metrics += 'parents_checks %s\n' % check_parents_result
 
@@ -700,21 +707,28 @@ class AdminApp(Flask):
                 logger.debug(self.template_folder)
                 archive_files = _get_archive_files_count()
                 parent_uuid_list = _get_parent_uuid_list_count()
-                """ Get CSW records"""
+
+                """ Get CSW stats"""
                 csw_records = csw_getCount(_get_pg_connection())
                 csw_parent_count = csw_getParentCount(_get_pg_connection())
                 csw_distinct_parent_ids = csw_getDistinctParentsCount(_get_pg_connection())
 
+                """ Get SolR stats"""
                 solr_docs, solr_current = _get_solr_count(self.mysolr.solr_url,
                                                           self.solr_auth)
                 solr_parent_count = _get_solr_parent_count(self.mysolr.solr_url,
                                                            self.solr_auth)
                 solr_parent_unique = _get_solr_parent__refs_count(self.mysolr.solr_url,
                                                                   self.solr_auth)
+                """ Parents checks"""
+                check_parents_result = 1
+                if checkParents(_getParentList(), csw_url):
+                    check_parents_result = 0
 
                 catalogStatus['archive'] = archive_files
                 catalogStatus['csw'] = csw_records
                 catalogStatus['solr'] = solr_docs
+                catalogStatus['csw-parents-check'] = check_parents_result
                 catalogStatus['solr-current'] = solr_current
                 catalogStatus['parent-uuid-list'] = parent_uuid_list
                 catalogStatus['csw-marked-parents'] = csw_parent_count
@@ -722,7 +736,7 @@ class AdminApp(Flask):
                 catalogStatus['solr-marked-parents'] = solr_parent_count
                 catalogStatus['solr-unique-parents'] = solr_parent_unique
                 self.csw_connection.close()
-                sleep(25)
+                sleep(50)
 
         def process_results():
             """Process task results as they are completed

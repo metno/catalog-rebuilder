@@ -52,6 +52,7 @@ catalogStatus['csw-marked-parents'] = 0
 catalogStatus['csw-distinct-parents'] = 0
 catalogStatus['solr-marked-parents'] = 0
 catalogStatus['solr-unique-parents'] = 0
+catalogStatus['csw-parents-check'] = None
 catalogStatus['running'] = None
 
 
