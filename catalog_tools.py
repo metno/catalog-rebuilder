@@ -98,9 +98,9 @@ def get_solrstatus(solr_url, authentication=None):
     base_url = '/'.join(tmp[0:-1])
     logger.debug("Getting status with url %s and core %s", base_url, core)
     res = None
+    qstring = '/admin/cores?action=STATUS&core='
     try:
-        res = requests.get(base_url +
-                           '/admin/cores?action=STATUS&core=' + core,
+        res = requests.get(base_url + qstring + core,
                            auth=authentication)
         res.raise_for_status()
     except requests.exceptions.HTTPError as errh:
@@ -122,9 +122,9 @@ def get_solrstatus(solr_url, authentication=None):
 def get_solrParentCount(solr_url, authentication=None):
     """Get SolR parent_count"""
     res = None
+    qstring = '/select?q=*:*&fq=isParent:true&rows=0'
     try:
-        res = requests.get(solr_url +
-                           '/select?q=*:*&fq=isParent:true&rows=0',
+        res = requests.get(solr_url + qstring,
                            auth=authentication)
         res.raise_for_status()
     except requests.exceptions.HTTPError as errh:
@@ -146,10 +146,10 @@ def get_solrParentCount(solr_url, authentication=None):
 def get_unique_parent_refs(solr_url, authentication=None):
     """Get SolR unique parent reference count"""
     res = None
+    qstring = '/select?q=*:*&json.facet.parents='
+    qstring += '"hll(related_dataset_id)"&wt=json&indent=true&rows=0'
     try:
-        res = requests.get(solr_url +
-                           '/select?q=*:*&json.facet.parents=' +
-                           '"hll(related_dataset_id)"&wt=json&indent=true&rows=0',
+        res = requests.get(solr_url + qstring,
                            auth=authentication)
         res.raise_for_status()
     except requests.exceptions.HTTPError as errh:
@@ -195,4 +195,3 @@ def createParentUUIDList(uuid_list):
             parents.append(elem.text)
 
     return parents
-
