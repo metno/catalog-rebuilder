@@ -230,7 +230,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     #     for task in parentJob.children:
     #         _recurse_results(task)
     logger.info("Wating a bit to make sure parents are processed")
-    sleep(300) 
+    sleep(300)
     """Update fileList remove ingested parents"""
     for parent in parent_mmds:
         fileList.remove(parent)
@@ -238,7 +238,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     self.update_state(state='PROGRESS',
                       meta={'current': current, 'total': total,
                             'status': 'Processing MMD files'})
-    #sleep(750)
+    # sleep(750)
     """Then we ingest all other datasets"""
     mmdJob = group(dmci_dist_ingest_task.s(file, action, call_distributors)
                    for file in fileList)()

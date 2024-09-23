@@ -55,7 +55,7 @@ def checkParents(parentList, csw_url):
             # print(f"{parent}: CSW search for children is failing!")
             return False
         else:
-            m = re.search(".*numberOfRecordsMatched\=\"(\d+)\".*", r.text)
+            m = re.search(r".*numberOfRecordsMatched=\"(\d+)\".*", r.text)
             if not m:
                 return False
 

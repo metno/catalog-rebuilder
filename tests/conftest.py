@@ -19,7 +19,6 @@ limitations under the License.
 
 import os
 import sys
-import uuid
 import shutil
 import pytest
 
@@ -75,8 +74,6 @@ def fncDir(tmpDir):
 ##
 #  Mock Files
 ##
-
-
 
 ##
 #  Objects
