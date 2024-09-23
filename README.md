@@ -1,5 +1,7 @@
 # S-ENDA Catalog rebuilder
 
+[![flake8](https://github.com/metno/catalog-rebuilder/actions/workflows/syntax.yml/badge.svg?branch=main)](https://github.com/metno/catalog-rebuilder/actions/workflows/syntax.yml)
+
 Catalog rebuilder of CSW and Solr for the S-ENDA project.
 
 ## Design
