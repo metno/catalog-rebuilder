@@ -3,7 +3,8 @@ stages:
   - release
 
 # git rev-parse --short HEAD
-    
+
+# Bump rebuild 1, magnarem     
 variables:
   catalog_rebuilder_version: main
     
