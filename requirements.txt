@@ -1,5 +1,5 @@
 metvocab @ git+https://github.com/metno/met-vocab-tools@v1.1
-dmci @ git+https://github.com/metno/discovery-metadata-catalog-ingestor@main
+dmci @ git+https://github.com/metno/discovery-metadata-catalog-ingestor@v0.2.11
 browsepy @ git+https://github.com/magnarem/browsepy@master
 requests>=2.22
 pyyaml>=5.1
