@@ -68,8 +68,8 @@ logger = get_task_logger(__name__)
 # stream_handler.setLevel(logging.DEBUG)
 # stream_handler.setFormatter(formatter)
 # logger.addHandler(stream_handler)
-logging.getLogger('solrindexer').setLevel(logging.WARNING)
-logging.getLogger('dmci').setLevel(logging.INFO)
+logging.getLogger('solrindexer').setLevel(logging.DEBUG)
+logging.getLogger('dmci').setLevel(logging.DEBUG)
 # logging.getLogger('pysolr').setLevel(logging.INFO)
 
 """Initialize Solr Connection object"""
@@ -77,6 +77,7 @@ authentication = None
 if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
     authentication = HTTPBasicAuth(CONFIG.solr_username,
                                    CONFIG.solr_password)
+logger.debug('Solr url: %s', CONFIG.solr_service_url) 
 indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
                     authentication=authentication, config={})
 
@@ -94,13 +95,14 @@ class CRSolrDist(SolRDist):
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CONFIG
+        logger.debug(self._conf.solr_service_url)
         # self._conf.fail_on_missing_parent = False
         self.authentication = self._init_authentication()
 
         #  Use the initiilized solr connection
         self.mysolr = indexMMD
         self.mysolr.solr_url = self._conf.solr_service_url
-        logger.debug(self._conf.solr_service_url)
+        logger.debug(self.mysolr.solr_url)
         return
 
 
