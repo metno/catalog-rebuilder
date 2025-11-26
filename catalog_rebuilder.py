@@ -78,7 +78,7 @@ if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
     authentication = HTTPBasicAuth(CONFIG.solr_username,
                                    CONFIG.solr_password)
 indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
-                    authentication=authentication)
+                    authentication=authentication, config={})
 
 
 class CRPyCSWMDist(PyCSWDist):
