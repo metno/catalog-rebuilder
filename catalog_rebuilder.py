@@ -60,7 +60,7 @@ dmci.CONFIG = CONFIG  # Not sure if this works
 """Initialize logging"""
 logger = get_task_logger(__name__)
 # logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 # formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:
 #                               {lineno:<4d} {levelname:8s} {message:}', style="{")
 
