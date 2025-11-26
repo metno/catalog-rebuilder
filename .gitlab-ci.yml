@@ -4,7 +4,7 @@ stages:
 
 # git rev-parse --short HEAD
 
-# Bump rebuild 4, magnarem
+# Bump rebuild 6, magnarem
 variables:
   catalog_rebuilder_version: main
 
