@@ -395,7 +395,6 @@ def loadFile(filename):
 @app.task(trail=True)
 def dmci_dist_ingest_task(mmd_path, action, call_distributors):
     """Celery task ingesting one mmd file"""
-    logger.debug(f"Task start solr url: {CRCONFIG.solr_service_url}")
     CRCONFIG = CRConfig()
     if not CRCONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
         sys.exit(1)
