@@ -22,11 +22,10 @@ limitations under the License.
 import os
 import re
 import sys
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
-
-from dmci import Config
-
 from multiprocessing import Manager
+
+from dmci import CONFIG, Config
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 """Bootstrap thread-proof dict to store tasi res7otvalues"""
 jobdata = Manager().dict()
@@ -135,8 +134,9 @@ def main():
 
 def create_app():
     """This is the wsgi entry point."""
-    from catalog_flask import AdminApp
     from browsepy import app as browsepyApp
+
+    from catalog_flask import AdminApp
 
     if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
         sys.exit(1)
