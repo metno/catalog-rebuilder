@@ -53,7 +53,7 @@ if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
     sys.exit(1)
 
 """Overrid DMCI package config"""
-dmci.CONFIG = CONFIG  # Not sure if this works
+sys.modules["dmci"].CONFIG = CONFIG
 
 
 """Initialize logging"""
