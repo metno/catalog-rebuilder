@@ -36,7 +36,8 @@ from celery.result import GroupResult, ResultBase
 from celery.utils.log import get_task_logger
 from dmci.api.app import App
 from dmci.api.worker import Worker as DmciWorker
-from dmci.distributors import PyCSWDist, SolRDist
+from dmci.distributors import PyCSWDist
+from dmci.distributors.distributor import Distributor
 from lxml import etree
 from requests.auth import HTTPBasicAuth
 from solrindexer.indexdata import IndexMMD
@@ -88,20 +89,19 @@ class CRPyCSWMDist(PyCSWDist):
         return
 
 
-class CRSolrDist(SolRDist):
+class CRSolrDist(Distributor):
     """Override SolRDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
         dmci.CONFIG = CRCONFIG
         self._conf = CRCONFIG
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
-        logger.debug(self._conf.solr_service_url)
+        logger.debug("CRSolrDistConstructor_ ", CRCONFIG.solr_service_url)
         # self._conf.fail_on_missing_parent = False
-        self.authentication = self._init_authentication()
+        #self.authentication = self._init_authentication()
 
         #  Use the initiilized solr connection
         self.mysolr = indexMMD
-        self.mysolr.solr_url = self._conf.solr_service_url
-        logger.debug(self.mysolr.solr_url)
+        self.mysolr.solr_url = CRCONFIG.solr_service_url
         return
 
 
