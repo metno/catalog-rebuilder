@@ -37,7 +37,6 @@ from celery.utils.log import get_task_logger
 from dmci.api.app import App
 from dmci.api.worker import Worker as DmciWorker
 from dmci.distributors import PyCSWDist, SolRDist
-from dmci.distributors.distributor import Distributor
 from lxml import etree
 from requests.auth import HTTPBasicAuth
 from solrindexer.indexdata import IndexMMD
@@ -92,7 +91,7 @@ class CRPyCSWMDist(PyCSWDist):
 class CRSolrDist(SolRDist):
     """Override SolRDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
-        Distributor.__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
+        super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CONFIG
         logger.debug(self._conf.solr_service_url)
         # self._conf.fail_on_missing_parent = False
