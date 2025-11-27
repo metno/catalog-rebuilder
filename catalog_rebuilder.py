@@ -16,33 +16,32 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-from concurrent.futures import ThreadPoolExecutor
-from concurrent import futures as Futures
-import itertools
-import requests
-import os
 import fnmatch
+import itertools
+import logging
+import os
+import shutil
 import sys
 import time
-import shutil
-from lxml import etree
+from concurrent import futures as Futures
+from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 from pathlib import Path
 from time import sleep
-import logging
-from celery import Celery
-from itertools import islice
-from celery import group
+
 import dmci
-from dmci.api.worker import Worker as DmciWorker
-from dmci.api.app import App
-
-from dmci.distributors import SolRDist, PyCSWDist
-
-import dmci.distributors.distributor
-from solrindexer.indexdata import IndexMMD
-from requests.auth import HTTPBasicAuth
+import requests
+from celery import Celery, group
+from celery.result import GroupResult, ResultBase
 from celery.utils.log import get_task_logger
-from celery.result import ResultBase, GroupResult
+from dmci.api.app import App
+from dmci.api.worker import Worker as DmciWorker
+from dmci.distributors import PyCSWDist, SolRDist
+from dmci.distributors.distributor import Distributor
+from lxml import etree
+from requests.auth import HTTPBasicAuth
+from solrindexer.indexdata import IndexMMD
+
 from main import CRConfig
 
 """Bootstrapping Catalog-Rebuilder"""
@@ -77,7 +76,7 @@ authentication = None
 if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
     authentication = HTTPBasicAuth(CONFIG.solr_username,
                                    CONFIG.solr_password)
-logger.debug('Solr url: %s', CONFIG.solr_service_url) 
+logger.debug('Solr url: %s', CONFIG.solr_service_url)
 indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
                     authentication=authentication, config={})
 
@@ -93,7 +92,7 @@ class CRPyCSWMDist(PyCSWDist):
 class CRSolrDist(SolRDist):
     """Override SolRDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
-        super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
+        Distributor.__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CONFIG
         logger.debug(self._conf.solr_service_url)
         # self._conf.fail_on_missing_parent = False
@@ -148,8 +147,7 @@ try:
     XSD_OBJ = etree.XMLSchema(
         etree.parse(CONFIG.mmd_xsd_path))
 except Exception as e:
-    logger.critical("XML Schema could not be parsed: %s" %
-                    str(CONFIG.mmd_xsd_path))
+    logger.critical(f"XML Schema could not be parsed: {str(CONFIG.mmd_xsd_path)}")
     logger.critical(str(e))
     sys.exit(1)
 
@@ -270,10 +268,10 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     job_time = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
     self.update_state(state='SUCCESS',
                       meta={'current': current, 'total': total,
-                            'status': 'Catalog rebuilding completed in {0}'.format(job_time)}
+                            'status': f'Catalog rebuilding completed in {job_time}'}
                       )
 
-    return {'status': 'Catalog rebuilding completed in {0}'.format(job_time),
+    return {'status': f'Catalog rebuilding completed in {job_time}',
             'current': current, 'total': total}
 
 
@@ -333,7 +331,7 @@ def getListOfFiles(dirName):
     create a list of file and sub directories
     names in the given directory
     """
-    listOfFiles = list()
+    listOfFiles = []
     for (dirpath, dirnames, filenames) in os.walk(dirName):
         for filename in fnmatch.filter(filenames, '*.xml'):
             listOfFiles.append(os.path.join(dirpath, filename))
@@ -376,14 +374,13 @@ def loadFile(filename):
     try:
         file = Path(filename)
     except Exception as e:
-        logger.warning('Not a valid filepath %s error was %s' % (filename, e))
+        logger.warning(f'Not a valid filepath {filename} error was {e}')
         return None
     with open(file, encoding='UTF-8') as fd:
         try:
             xmlfile = fd.read()
         except Exception as e:
-            logger.error('Clould not read file %s error was %s' %
-                         (filename, e))
+            logger.error(f'Clould not read file {filename} error was {e}')
             return None
         return xmlfile.encode()
 
@@ -397,7 +394,7 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
                     path_to_parent_list=CONFIG.path_to_parent_list,
                     md_namespace=CONFIG.env_string)
     valid, msg, data_ = worker.validate(data)
-    if not data == data_:
+    if data != data_:
         msg, code = App._persist_file(data_, mmd_path)
     if valid is True:
         status = True
@@ -406,8 +403,8 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
         failed = []
         skipped = []
         failed_msg = []
-        failed_dict = dict()
-        ok_dict = dict()
+        failed_dict = {}
+        ok_dict = {}
 
         for dist in call_distributors:
             if dist not in worker.CALL_MAP:
@@ -440,7 +437,7 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
             status = False
         else:
             status = True
-            msg = '\n'.join([msg for msg in called])
+            msg = '\n'.join(list(called))
 
     else:
         logger.error("XML Validation failed for file: %s . Reason: %s", mmd_path, msg)
@@ -462,7 +459,7 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
                     path_to_parent_list=CONFIG.path_to_parent_list,
                     md_namespace=CONFIG.env_string)
     valid, msg, data_ = worker.validate(data)
-    if not data == data_:
+    if data != data_:
         msg, code = App._persist_file(data_, mmd_path)
     if valid is True:
         status = True
@@ -497,7 +494,7 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
             else:
                 skipped.append(dist)
         if len(failed) > 0:
-            msg = mmd_path + ': ' + '\n'.join([msg for msg in failed_msg])
+            msg = mmd_path + ': ' + '\n'.join(list(failed_msg))
             status = False
         else:
             status = True
@@ -540,11 +537,7 @@ def dmci_ingest(dmci_url, mmd, action):
 def _recurse_results(tasks):
     """recursive task result loop function function"""
     for task in tasks:
-        if isinstance(task, GroupResult):
-            if task.successful():
-                status, file, msg = task.get()
-                # logger.debug("%s: %s: %s", status, file, msg)
-        elif isinstance(task, ResultBase):
+        if isinstance(task, (GroupResult, ResultBase)):
             if task.successful():
                 status, file, msg = task.get()
                 # logger.debug("%s: %s: %s", status, file, msg)
@@ -561,12 +554,12 @@ def main(archive_path, dmci_url, parent_uuid_list):
     """
 
     if not os.path.exists(archive_path):
-        logger.error("Could not read from archive path %s" % archive_path)
+        logger.error(f"Could not read from archive path {archive_path}")
         sys.exit(1)
-    logger.info("Reading from archive path %s" % archive_path)
+    logger.info(f"Reading from archive path {archive_path}")
 
     dmci_url = os.getenv('DMCI_REBUILDER_URL')
-    logger.info("DMCI rebuilder url is %s" % dmci_url)
+    logger.info(f"DMCI rebuilder url is {dmci_url}")
 
     parentList = getParentUUIDs(parent_uuid_list)
 
@@ -596,7 +589,7 @@ def main(archive_path, dmci_url, parent_uuid_list):
         status, msg = dmci_ingest(dmci_url, parent_mmd)
         if status != 200:
             logger.error(
-                "Could not ingest parent mmd file %s. Reason: %s" % (parent, msg))
+                f"Could not ingest parent mmd file {parent}. Reason: {msg}")
         fileList.remove(parent)
 
     """Then we ingest all the rest"""
@@ -606,8 +599,7 @@ def main(archive_path, dmci_url, parent_uuid_list):
         logger.debug("Processing file: %s", file)
         status, msg = dmci_ingest(dmci_url, mmd)
         if status != 200:
-            logger.error("Could not ingest mmd file %s. Reason: %s" %
-                         (file, msg))
+            logger.error(f"Could not ingest mmd file {file}. Reason: {msg}")
 
     """
     TODO: Add check here after ingestion is finished to check
@@ -635,10 +627,7 @@ if __name__ == "__main__":
     archive_path = os.getenv('MMD_ARCHIVE_PATH')
     dmci_url = os.getenv('DMCI_REBUILDER_URL')
 
-    if os.getenv('PARENT_UUID_LIST'):
-        parent_uuid_list = os.getenv('PARENT_UUID_LIST')
-    else:
-        parent_uuid_list = '/parent-uuid-list.xml'
+    parent_uuid_list = os.getenv('PARENT_UUID_LIST') if os.getenv('PARENT_UUID_LIST') else '/parent-uuid-list.xml'
 
     if not os.path.exists(parent_uuid_list):
         logger.error("Missing parents-uuid-list.xml from path %s",
