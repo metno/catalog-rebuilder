@@ -61,32 +61,14 @@ dmci.CONFIG = CRCONFIG
 
 """Initialize logging"""
 logger = get_task_logger(__name__)
-# logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-# formatter = logging.Formatter(fmt='[{asctime:}] {name:>28}:
-#                               {lineno:<4d} {levelname:8s} {message:}', style="{")
-
-# stream_handler = logging.StreamHandler()
-# stream_handler.setLevel(logging.DEBUG)
-# stream_handler.setFormatter(formatter)
-# logger.addHandler(stream_handler)
-logging.getLogger('solrindexer').setLevel(logging.DEBUG)
-logging.getLogger('dmci').setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
+logging.getLogger('solrindexer').setLevel(logging.WARNING)
+logging.getLogger('dmci').setLevel(logging.INFO)
 # logging.getLogger('pysolr').setLevel(logging.INFO)
-
-"""Initialize Solr Connection object"""
-authentication = None
-if CRCONFIG.solr_username is not None and CRCONFIG.solr_password is not None:
-    authentication = HTTPBasicAuth(CRCONFIG.solr_username,
-                                   CRCONFIG.solr_password)
-logger.debug('Solr url: %s', CRCONFIG.solr_service_url)
-indexMMD = IndexMMD(CRCONFIG.solr_service_url, always_commit=False,
-                    authentication=authentication, config={})
 
 
 class CRPyCSWMDist(PyCSWDist):
     """Override PyCSwDist  with the given config read from rebuilder"""
-    dmci.CONFIG = CRCONFIG
 
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
         dmci.CONFIG = CRCONFIG
@@ -104,7 +86,6 @@ class CRSolrDist(Distributor):
     STATUS = [TOTAL_DELETED, TOTAL_INSERTED, TOTAL_UPDATED]
 
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
-        dmci.CONFIG = CRCONFIG
         self._conf = CRCONFIG
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CRCONFIG
@@ -241,14 +222,11 @@ class Worker(DmciWorker):
         "pycsw": CRPyCSWMDist,
         "solr": CRSolrDist
     }
-    dmci.CONFIG = CRCONFIG
 
     def __init__(self, cmd, xml_file, xsd_validator, dist_call, **kwargs):
-        dmci.CONFIG = CRCONFIG
         super().__init__(cmd, xml_file, xsd_validator, **kwargs)
         self._conf = CRCONFIG
         self._conf.call_distributors = dist_call  # Use given dist call list from flask
-        dmci.CONFIG = CRCONFIG
         logger.debug("command:  %s", self._dist_cmd)
         logger.debug("dists:  %s", self._conf.call_distributors)
         logger.debug("xsd:  %s", self._xsd_obj)
@@ -273,8 +251,6 @@ app.conf.update(task_serializer='json',
                 )
 
 
-if not CRCONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
-    sys.exit(1)
 
 """Initialize global xsd_obj used by dmci distributors"""
 XSD_OBJ = None
@@ -297,7 +273,6 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.info("Requested task %s", self.request.id)
     logger.debug("Call distributors: %s", call_distributors)
     logger.debug("parent list path %s", parentlist_path)
-    dmci.CONFIG = CRCONFIG
 
     self.update_state(state='PENDING',
                       meta={'current': 0, 'total': 1,
@@ -541,11 +516,9 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
         failed_msg = []
         failed_dict = {}
         ok_dict = {}
-        dmci.CONFIG = CRCONFIG
         for dist in call_distributors:
             if dist not in worker.CALL_MAP:
                 continue
-            dmci.CONFIG = CRCONFIG
             obj = worker.CALL_MAP[dist](
                 worker._dist_cmd,
                 xml_file=mmd_path,
@@ -553,7 +526,6 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
                 worker=worker,
                 path_to_parent_list=CRCONFIG.path_to_parent_list
             )
-            dmci.CONFIG = CRCONFIG
             obj._conf = CRCONFIG
             valid &= obj.is_valid()
             if obj.is_valid():
