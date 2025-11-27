@@ -34,7 +34,6 @@ import requests
 from celery import Celery, group
 from celery.result import GroupResult, ResultBase
 from celery.utils.log import get_task_logger
-from dmci import CONFIG
 from dmci.api.app import App
 from dmci.api.worker import Worker as DmciWorker
 from dmci.distributors import PyCSWDist, SolRDist
@@ -55,7 +54,8 @@ if not CRCONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
 """Overrid DMCI package config"""
 if 'dmci' in sys.modules:
     sys.modules['dmci'].CONFIG = CRCONFIG
-CONFIG = CRCONFIG
+
+dmci.CONFIG = CRCONFIG
 
 
 """Initialize logging"""
@@ -85,8 +85,9 @@ indexMMD = IndexMMD(CRCONFIG.solr_service_url, always_commit=False,
 
 class CRPyCSWMDist(PyCSWDist):
     """Override PyCSwDist  with the given config read from rebuilder"""
+    dmci.CONFIG = CRCONFIG
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
-        CONFIG = CRCONFIG
+        dmci.CONFIG = CRCONFIG
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         self._conf = CRCONFIG
         return
@@ -94,8 +95,9 @@ class CRPyCSWMDist(PyCSWDist):
 
 class CRSolrDist(SolRDist):
     """Override SolRDist  with the given config read from rebuilder"""
+    dmci.CONFIG = CRCONFIG
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
-        CONFIG = CRCONFIG
+        dmci.CONFIG = CRCONFIG
         self._conf = CRCONFIG
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
         logger.debug(f"CRSolrDistConstructor_ {self._conf.solr_service_url}")
@@ -114,8 +116,9 @@ class Worker(DmciWorker):
         "pycsw": CRPyCSWMDist,
         "solr": CRSolrDist
     }
-
+    dmci.CONFIG = CRCONFIG
     def __init__(self, cmd, xml_file, xsd_validator, dist_call, **kwargs):
+        dmci.CONFIG = CRCONFIG
         super().__init__(cmd, xml_file, xsd_validator, **kwargs)
         self._conf = CRCONFIG
         self._conf.call_distributors = dist_call  # Use given dist call list from flask
@@ -393,6 +396,7 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
     """Celery task ingesting one mmd file"""
     data = loadFile(mmd_path)
     status = False
+    dmci.CONFIG = CRCONFIG
     worker = Worker(action, mmd_path, XSD_OBJ, call_distributors,
                     path_to_parent_list=CRCONFIG.path_to_parent_list,
                     md_namespace=CRCONFIG.env_string)
@@ -408,10 +412,11 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
         failed_msg = []
         failed_dict = {}
         ok_dict = {}
-        CONFIG = CRCONFIG
+        dmci.CONFIG = CRCONFIG
         for dist in call_distributors:
             if dist not in worker.CALL_MAP:
                 continue
+            dmci.CONFIG = CRCONFIG
             obj = worker.CALL_MAP[dist](
                 worker._dist_cmd,
                 xml_file=mmd_path,
@@ -419,8 +424,8 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
                 worker=worker,
                 path_to_parent_list=CRCONFIG.path_to_parent_list
             )
+            dmci.CONFIG = CRCONFIG
             obj._conf = CRCONFIG
-            CONFIG = CRCONFIG
             valid &= obj.is_valid()
             if obj.is_valid():
                 obj._conf = CRCONFIG
