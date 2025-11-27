@@ -36,7 +36,8 @@ from celery.result import GroupResult, ResultBase
 from celery.utils.log import get_task_logger
 from dmci.api.app import App
 from dmci.api.worker import Worker as DmciWorker
-from dmci.distributors import PyCSWDist, SolRDist
+from dmci.distributors import PyCSWDist
+from dmci.distributors.distributor import Distributor
 from lxml import etree
 from requests.auth import HTTPBasicAuth
 from solrindexer.indexdata import IndexMMD
@@ -47,12 +48,12 @@ from main import CRConfig
 
 """Read the DMCI config object"""
 os.curdir = os.path.abspath(os.path.dirname(__file__))
-CONFIG = CRConfig()
-if not CONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
+CRCONFIG = CRConfig()
+if not CRCONFIG.readConfig(configFile=os.environ.get("DMCI_CONFIG", None)):
     sys.exit(1)
 
 """Overrid DMCI package config"""
-sys.modules["dmci"].CONFIG = CONFIG
+sys.modules["dmci"].CONFIG = CRCONFIG
 
 
 """Initialize logging"""
@@ -72,11 +73,11 @@ logging.getLogger('dmci').setLevel(logging.DEBUG)
 
 """Initialize Solr Connection object"""
 authentication = None
-if CONFIG.solr_username is not None and CONFIG.solr_password is not None:
-    authentication = HTTPBasicAuth(CONFIG.solr_username,
-                                   CONFIG.solr_password)
-logger.debug('Solr url: %s', CONFIG.solr_service_url)
-indexMMD = IndexMMD(CONFIG.solr_service_url, always_commit=False,
+if CRCONFIG.solr_username is not None and CRCONFIG.solr_password is not None:
+    authentication = HTTPBasicAuth(CRCONFIG.solr_username,
+                                   CRCONFIG.solr_password)
+logger.debug('Solr url: %s', CRCONFIG.solr_service_url)
+indexMMD = IndexMMD(CRCONFIG.solr_service_url, always_commit=False,
                     authentication=authentication, config={})
 
 
@@ -84,15 +85,16 @@ class CRPyCSWMDist(PyCSWDist):
     """Override PyCSwDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
-        self._conf = CONFIG
+        self._conf = CRCONFIG
         return
 
 
-class CRSolrDist(SolRDist):
+class CRSolrDist(Distributor):
     """Override SolRDist  with the given config read from rebuilder"""
     def __init__(self, cmd, xml_file=None, metadata_UUID=None, worker=None, **kwargs):
+        dmci.CONFIG = CRCONFIG
+        self._conf = CRCONFIG
         super().__init__(cmd, xml_file, metadata_UUID, worker, **kwargs)
-        self._conf = CONFIG
         logger.debug(self._conf.solr_service_url)
         # self._conf.fail_on_missing_parent = False
         self.authentication = self._init_authentication()
@@ -113,9 +115,9 @@ class Worker(DmciWorker):
 
     def __init__(self, cmd, xml_file, xsd_validator, dist_call, **kwargs):
         super().__init__(cmd, xml_file, xsd_validator, **kwargs)
-        self._conf = CONFIG
+        self._conf = CRCONFIG
         self._conf.call_distributors = dist_call  # Use given dist call list from flask
-        dmci.CONFIG = CONFIG
+        dmci.CONFIG = CRCONFIG
         logger.debug("command:  %s", self._dist_cmd)
         logger.debug("dists:  %s", self._conf.call_distributors)
         logger.debug("xsd:  %s", self._xsd_obj)
@@ -126,8 +128,8 @@ class Worker(DmciWorker):
 
 
 """Initialize Celery"""
-redis_broker = str(CONFIG.redis_broker) + '/0'
-redis_backend = str(CONFIG.redis_broker) + '/0'
+redis_broker = str(CRCONFIG.redis_broker) + '/0'
+redis_backend = str(CRCONFIG.redis_broker) + '/0'
 app = Celery('rebuilder',
              broker=redis_broker, backend=redis_backend)
 app.conf.update(task_serializer='json',
@@ -144,15 +146,15 @@ app.conf.update(task_serializer='json',
 XSD_OBJ = None
 try:
     XSD_OBJ = etree.XMLSchema(
-        etree.parse(CONFIG.mmd_xsd_path))
+        etree.parse(CRCONFIG.mmd_xsd_path))
 except Exception as e:
-    logger.critical(f"XML Schema could not be parsed: {str(CONFIG.mmd_xsd_path)}")
+    logger.critical(f"XML Schema could not be parsed: {str(CRCONFIG.mmd_xsd_path)}")
     logger.critical(str(e))
     sys.exit(1)
 
 """Hack for container warning"""
 githack = 'git config --global --add safe.directory '
-os.system(githack+CONFIG.mmd_repo_path)
+os.system(githack + CRCONFIG.mmd_repo_path)
 
 
 @app.task(bind=True, trail=True)
@@ -161,7 +163,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     logger.info("Requested task %s", self.request.id)
     logger.debug("Call distributors: %s", call_distributors)
     logger.debug("parent list path %s", parentlist_path)
-    dmci.config = CONFIG
+    dmci.CONFIG = CRCONFIG
 
     self.update_state(state='PENDING',
                       meta={'current': 0, 'total': 1,
@@ -173,7 +175,7 @@ def rebuild_task(self, action, parentlist_path, call_distributors):
     # index_archive = os.environ.get("INDEX_ARCHIVE", None)
     # if index_archive is not None:
     #    INDEX_ARCHIVE = index_archive
-    fileList = getListOfFiles(CONFIG.mmd_repo_path)
+    fileList = getListOfFiles(CRCONFIG.mmd_repo_path)
 
     """Keep track of ingest tasks and status"""
     total = len(fileList)
@@ -281,8 +283,8 @@ def processFile(file):
 
 def cloneRepo():
     """ Updates the MMD_REPO. """
-    mmd_repo = CONFIG.mmd_repo_url
-    destination_path = CONFIG.mmd_repo_path
+    mmd_repo = CRCONFIG.mmd_repo_url
+    destination_path = CRCONFIG.mmd_repo_path
     if not os.path.exists(destination_path):
         clone_command = "git clone " + mmd_repo + " " + destination_path
     else:
@@ -390,8 +392,8 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
     data = loadFile(mmd_path)
     status = False
     worker = Worker(action, mmd_path, XSD_OBJ, call_distributors,
-                    path_to_parent_list=CONFIG.path_to_parent_list,
-                    md_namespace=CONFIG.env_string)
+                    path_to_parent_list=CRCONFIG.path_to_parent_list,
+                    md_namespace=CRCONFIG.env_string)
     valid, msg, data_ = worker.validate(data)
     if data != data_:
         msg, code = App._persist_file(data_, mmd_path)
@@ -404,7 +406,7 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
         failed_msg = []
         failed_dict = {}
         ok_dict = {}
-
+        dmci.CONFIG = CRCONFIG
         for dist in call_distributors:
             if dist not in worker.CALL_MAP:
                 continue
@@ -413,12 +415,12 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
                 xml_file=mmd_path,
                 metadata_UUID=worker._dist_metadata_id_uuid,
                 worker=worker,
-                path_to_parent_list=CONFIG.path_to_parent_list
+                path_to_parent_list=CRCONFIG.path_to_parent_list
             )
-            obj._conf = CONFIG
+            obj._conf = CRCONFIG
             valid &= obj.is_valid()
             if obj.is_valid():
-                obj._conf = CONFIG
+                obj._conf = CRCONFIG
                 obj_status, obj_msg = obj.run()
                 status &= obj_status
                 if obj_status:
@@ -454,9 +456,14 @@ def dmci_dist_ingest_task(mmd_path, action, call_distributors):
 def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
     """Using the distributors directly ingesting"""
     status = False
-    worker = Worker(action, mmd_path, xsd_obj, call_distributors,
-                    path_to_parent_list=CONFIG.path_to_parent_list,
-                    md_namespace=CONFIG.env_string)
+    worker = Worker(
+        action,
+        mmd_path,
+        xsd_obj,
+        call_distributors,
+        path_to_parent_list=CRCONFIG.path_to_parent_list,
+        md_namespace=CRCONFIG.env_string,
+    )
     valid, msg, data_ = worker.validate(data)
     if data != data_:
         msg, code = App._persist_file(data_, mmd_path)
@@ -467,7 +474,7 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
         failed = []
         skipped = []
         failed_msg = []
-
+        dmci.CONFIG = CRCONFIG
         for dist in call_distributors:
             if dist not in worker.CALL_MAP:
                 skipped.append(dist)
@@ -477,12 +484,12 @@ def dmci_dist_ingest(data, mmd_path, action, call_distributors, xsd_obj):
                 xml_file=mmd_path,
                 metadata_id=worker._dist_metadata_id,
                 worker=worker,
-                path_to_parent_list=CONFIG.path_to_parent_list
+                path_to_parent_list=CRCONFIG.path_to_parent_list
             )
-            obj._conf = CONFIG
+            obj._conf = CRCONFIG
             valid &= obj.is_valid()
             if obj.is_valid():
-                obj._conf = CONFIG
+                obj._conf = CRCONFIG
                 obj_status, obj_msg = obj.run()
                 status &= obj_status
                 if obj_status:
