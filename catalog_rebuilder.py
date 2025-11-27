@@ -250,8 +250,6 @@ app.conf.update(task_serializer='json',
                 result_expires=43200
                 )
 
-
-
 """Initialize global xsd_obj used by dmci distributors"""
 XSD_OBJ = None
 try:
