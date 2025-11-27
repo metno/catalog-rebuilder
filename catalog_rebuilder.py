@@ -103,6 +103,7 @@ class CRSolrDist(SolRDist):
         logger.debug(f"CRSolrDistConstructor_ {self._conf.solr_service_url}")
         # self._conf.fail_on_missing_parent = False
         #self.authentication = self._init_authentication()
+        self._conf = CRCONFIG
 
         #  Use the initiilized solr connection
         self.mysolr = indexMMD
