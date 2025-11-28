@@ -24,7 +24,7 @@ import re
 import sys
 from multiprocessing import Manager
 
-from dmci import CONFIG, Config
+from dmci import Config
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 """Bootstrap thread-proof dict to store tasi res7otvalues"""
